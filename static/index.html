@@ -1,0 +1,675 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>KalipheTiles</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/proj4@2.12.1/dist/proj4.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+header{padding:8px 12px;background:#14213d;color:#fff;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+header b{font-size:16px;margin-right:6px}
+button,select{padding:6px 10px;border-radius:6px;border:0;cursor:pointer}
+#go{background:#fca311;font-weight:600}#go:disabled{opacity:.5;cursor:default}
+#ib{position:absolute;left:0;top:0;transform-origin:0 0}
+#ib img{display:block;max-width:none;user-select:none;-webkit-user-drag:none}
+.zb{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:4px;z-index:2}
+.zb button{width:32px;height:32px;font-size:18px;padding:0}
+#list div{display:flex;gap:8px;padding:2px 8px}#list span{flex:1}
+.ov{position:absolute;top:8px;left:8px;z-index:5;width:min(430px,calc(100% - 60px));display:flex;flex-direction:column;gap:5px}
+.row{display:flex;gap:4px;align-items:center}
+.ov input[type=text]{flex:1;min-width:0;padding:6px 8px;border:1px solid #bbb;border-radius:6px}
+.ov label{background:#fff;padding:4px 6px;border-radius:6px;font-size:12px;white-space:nowrap}
+#gstep:empty{display:none}
+#ws{flex:1;position:relative;min-height:0;background:#b0bec5;overflow:hidden}
+.win{position:absolute;display:flex;flex-direction:column;background:#fff;border:1px solid #14213d;border-radius:8px;box-shadow:0 4px 18px #0006;resize:both;overflow:hidden;min-width:220px;min-height:90px}
+.win.min{height:auto!important;min-height:0;resize:none}.win.min .wb{display:none}
+.wh{background:#14213d;color:#fff;padding:4px 8px;cursor:move;display:flex;align-items:center;justify-content:space-between;user-select:none}
+.wh button{padding:0 8px;background:#fca311}
+.wb{flex:1;min-height:0;position:relative}.wb.col{display:flex;flex-direction:column}
+#iv{position:absolute;inset:0;background:#222;overflow:hidden;cursor:crosshair;touch-action:none}
+#mapwrap{position:absolute;inset:0}
+#list{font-size:12px}
+.tabs{display:flex;flex-wrap:wrap;gap:2px;background:#eceff1;padding:2px}
+.tabs button{border-radius:4px;padding:4px 8px}.tabs button.on,.tab button.on{background:#fca311}
+.tab{display:none;flex:1;min-height:0;overflow:auto;padding:8px;font-size:13px}.tab.on{display:block}
+.tab#t-pts{padding:0}
+.tab label{display:block;margin:6px 0 2px;font-size:12px}
+.tab input[type=text],.tab input[type=number],.tab select,.tab textarea{width:100%;padding:4px}
+.tab .r{display:flex;gap:6px;align-items:center;margin:4px 0}.tab .r>*{flex:1}.tab .r input[type=number]{max-width:90px}
+.tab h4{margin:10px 0 2px}.tab small{color:#555;display:block}
+.xk{display:inline-block}.chk{display:inline-block;margin:2px 10px 2px 0}
+.sw{display:inline-block;width:26px;height:26px;border:1px solid #333;margin:2px;color:#fff;text-align:center;line-height:26px;cursor:pointer;text-shadow:0 0 2px #000}
+#cr{position:absolute;display:none;outline:2px dashed #fff;box-shadow:0 0 0 99999px #0006;pointer-events:none}
+.rs{position:relative;height:30px;margin:4px 0}.rt{position:absolute;left:0;right:0;top:12px;height:6px;border-radius:3px;background:#ccc}
+.rs input{position:absolute;left:0;top:5px;width:100%;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none;height:20px}
+.rs input::-webkit-slider-thumb{pointer-events:auto;-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#14213d;border:2px solid #fff;cursor:pointer}
+.rs input::-webkit-slider-runnable-track{background:none}
+#res-list{background:#fff;border-radius:6px;max-height:180px;overflow:auto;box-shadow:0 1px 6px #0004}
+#res-list div{padding:6px 8px;cursor:pointer;border-bottom:1px solid #eee}#res-list div:hover{background:#eee}
+.pt{position:absolute;width:24px;height:24px;border-radius:50%;background:#e63946;color:#fff;font:bold 12px/20px sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px #0006;cursor:grab}
+.pt.wait{background:#fca311;pointer-events:none}
+.pt.sel{background:#2a9d8f;outline:3px solid #fff;z-index:3}
+#list div{cursor:pointer}#list div.sel{background:#d8f3ee}
+.ip{transform:translate(-50%,-50%) scale(var(--inv,1))}
+#status{padding:6px 12px;background:#eee;font-size:13px}
+dialog{border:0;border-radius:10px;padding:18px;width:min(460px,92vw)}
+dialog input{width:100%;padding:6px;margin:4px 0 12px}dialog small{color:#555}
+</style></head><body>
+<header>
+ <b>KalipheTiles</b>
+ <input type="file" id="file" accept="image/jpeg,image/png">
+ <select id="method"><option value="affine">Affine (3+ pts)</option><option value="poly2">Polynôme 2 (6+ pts)</option><option value="tps">Thin plate spline (4+ pts)</option></select>
+ <select id="base">
+  <optgroup label="Gratuits">
+   <option value="osm">OpenStreetMap</option><option value="topo">Topo (OpenTopoMap)</option>
+   <option value="esri">Satellite (Esri)</option><option value="ignp">IGN Plan</option><option value="igns">IGN Photo aérienne</option></optgroup>
+  <optgroup label="Mapbox (token)"><option value="mbs">Mapbox Satellite</option><option value="mbr">Mapbox Rues</option><option value="mbo">Mapbox Outdoors</option></optgroup>
+  <optgroup label="Google (clé API)"><option value="gr">Google Plan</option><option value="gs">Google Satellite</option></optgroup>
+ </select>
+ <button id="cfg" title="Tokens et clés API">⚙ Clés</button>
+ <button id="undo" title="Ctrl+Z">↶ Annuler</button><button id="redo" title="Ctrl+Y">↷ Rétablir</button>
+ <button id="go" disabled>Géoréférencer</button>
+</header>
+<div id="ws">
+ <div class="win" id="w-img" style="left:6px;top:6px;width:46%;height:56%"><div class="wh"><span>🖼 Image à géoréférencer</span><button class="wm" title="Réduire">–</button></div>
+  <div class="wb"><div id="iv"><div id="ib"></div><div class="zb"><button id="zi" title="Zoom +">+</button><button id="zo" title="Zoom −">−</button><button id="zf" title="Ajuster">⤢</button></div></div></div></div>
+ <div class="win" id="w-map" style="left:48%;top:6px;width:51%;height:96%"><div class="wh"><span>🗺 Carte</span><button class="wm" title="Réduire">–</button></div>
+  <div class="wb"><div id="mapwrap"><div id="map"></div>
+  <div class="ov">
+   <div class="row"><input type="text" id="q" placeholder="Chercher un lieu (ville, adresse…)"><button id="qgo">🔍</button></div>
+   <div id="res-list"></div>
+   <div class="row"><input type="text" id="coord" placeholder="Coordonnées : 43.34, 3.21 · 39g 90 , 5g 30 · 31T 500000 4800000 · X Y"></div>
+   <div class="row">
+    <select id="cf"><option value="auto">Auto</option><option value="dd">Degrés (DD / DMS / DDM)</option><option value="grp">Grades — méridien de Paris (39g 90 , 5g 30)</option><option value="grg">Grades — Greenwich</option><option value="utm">UTM</option><option value="l93">Lambert 93</option><option value="dzn">Lambert Nord Algérie (km ou m)</option><option value="merc">Web Mercator</option></select>
+    <label><input type="checkbox" id="lf"> lon, lat</label><button id="cgo">Placer le point</button></div>
+   <div class="row">
+    <label><input type="checkbox" id="gon"> Grille</label>
+    <select id="gsys"><option value="ll">Lat / Lon</option><option value="utm">UTM</option><option value="l93">Lambert 93</option><option value="dzn">Lambert Nord Algérie (km)</option><option value="gp">Grades Paris (39g 90…)</option></select>
+    <input type="text" id="gst" placeholder="pas (° ou m)" style="max-width:100px">
+    <label><input type="checkbox" id="snap"> Aimanter</label><label id="gstep"></label></div>
+  </div>
+  </div></div></div>
+ <div class="win" id="w-pan" style="left:6px;top:58%;width:46%;height:40%"><div class="wh"><span>🧰 Outils</span><button class="wm" title="Réduire">–</button></div>
+  <div class="wb col">
+   <div class="tabs"><button class="on" data-t="pts">Points</button><button data-t="img">Image</button><button data-t="loc">Localisation</button><button data-t="exp">Tuiles &amp; export</button><button data-t="cloud">Cloud</button><button data-t="proj">Projet</button></div>
+   <div class="tab on" id="t-pts"><div id="list"></div></div>
+   <div class="tab" id="t-img">
+    <h4>Rogner</h4><div class="r"><button id="b-crop">Sélectionner la zone</button><button id="b-cropgo">Appliquer</button></div><small id="cropinfo"></small>
+    <h4>Redresser / pivoter (image de travers)</h4><div class="r"><input type="number" id="rot" value="0" step="0.1"><button id="b-rot">Pivoter</button><button id="b-ang">Mesurer l'angle</button></div>
+    <small>Positif = anti-horaire. « Mesurer » : cliquez 2 points d'une ligne qui doit être horizontale (ligne de grille, bord). Les points déjà posés suivent la rotation.</small>
+    <h4>Supprimer des couleurs</h4><div class="r"><button id="b-pick">Pipette</button><span style="flex:0">tolérance</span><input type="number" id="tol" value="40" min="0" max="255"></div>
+    <div id="sws"></div><button id="b-rm">Supprimer ces couleurs (→ transparent)</button>
+    <h4>&nbsp;</h4><button id="b-reset">Restaurer l'image d'origine</button><small>Rogner / pivoter / couleurs ne s'annulent pas avec Ctrl+Z : utilisez ce bouton.</small>
+   </div>
+   <div class="tab" id="t-loc">
+    <label>Définir la position géographique de l'image</label>
+    <select id="lm"><option value="vis">Visuellement (points image ↔ carte)</option><option value="wld">Fichier World (.wld .tfw .jgw .pgw .gfw)</option><option value="ozi">OziExplorer (.map)</option><option value="tab">MapInfo (.tab)</option><option value="bbox">Emprise (Ouest Sud Est Nord)</option><option value="aff">Transformation affine (6 nombres)</option><option value="cor">Coins (E1 N1 E2 N2 E3 N3)</option></select>
+    <div data-m="wld ozi tab"><label>Fichier</label><input type="file" id="lf"></div>
+    <div data-m="wld tab bbox aff cor"><label>Système des coordonnées saisies</label>
+     <select id="lcrs"><option value="wgs">WGS84 (lon, lat °)</option><option value="merc">Web Mercator (m)</option><option value="l93">Lambert 93 (m)</option><option value="dzn">Lambert Nord Algérie (m)</option><option value="utm">UTM WGS84 (zone ci-dessous)</option></select>
+     <div class="r"><input type="number" id="lz" value="31" min="1" max="60"><select id="lh"><option value="N">Nord</option><option value="S">Sud</option></select></div></div>
+    <div data-m="bbox"><div class="r"><input type="text" id="bw" placeholder="Ouest"><input type="text" id="bs" placeholder="Sud"></div><div class="r"><input type="text" id="be" placeholder="Est"><input type="text" id="bn" placeholder="Nord"></div></div>
+    <div data-m="aff wld"><label>A, D, B, E, C, F (ordre d'un fichier world, un par ligne ou espacés)</label><textarea id="aff" rows="3"></textarea></div>
+    <div data-m="cor"><label>Haut-gauche, haut-droit, bas-droit : E1 N1 E2 N2 E3 N3</label><textarea id="cor" rows="2"></textarea></div>
+    <div data-m="vis"><small>Cliquez un point sur l'image puis sa position sur la carte, ou saisissez ses coordonnées (panneau sur la carte).</small></div>
+    <div data-m="wld ozi tab bbox aff cor"><button id="b-loc">Appliquer</button></div>
+   </div>
+   <div class="tab" id="t-exp">
+    <h4>Niveaux de zoom des tuiles (0 – 24)</h4>
+    <div class="rs"><div class="rt" id="rt"></div><input type="range" id="zmin" min="0" max="24" value="0"><input type="range" id="zmax" min="0" max="24" value="18"></div>
+    <div class="r"><b id="zl">Zoom 0 → 18</b><button id="b-auto">Auto</button></div><small id="est"></small>
+    <small>Les tuiles sont créées par le bouton « Géoréférencer » (en haut) : dossier XYZ + MBTiles.</small>
+    <h4>Exporter</h4>
+    <label>Système de sortie</label><select id="ocrs"><option value="3857">Global Mercator (EPSG:3857)</option><option value="4326">WGS84 (EPSG:4326)</option></select>
+    <label>Taille max du raster (px)</label><input type="number" id="maxpx" value="8000" min="500" max="20000">
+    <div><span class="chk"><input type="checkbox" class="xk" value="geotiff" checked> GeoTIFF</span><span class="chk"><input type="checkbox" class="xk" value="geojson" checked> GeoJSON (emprise + points)</span><span class="chk"><input type="checkbox" class="xk" value="shp"> Shapefile (emprise)</span>
+     <span class="chk"><input type="checkbox" class="xk" value="kmz"> KMZ (Google Earth)</span><span class="chk"><input type="checkbox" class="xk" value="gpkg"> GeoPackage (tuiles)</span>
+     <span class="chk"><input type="checkbox" class="xk" value="png_wld"> PNG + .pgw</span><span class="chk"><input type="checkbox" class="xk" value="jpg_wld"> JPG + .jgw</span><span class="chk"><input type="checkbox" class="xk" value="tif_wld"> TIFF + .tfw</span></div>
+    <div class="r"><button id="b-exp" style="background:#fca311">Exporter</button><button id="b-open">Ouvrir le dossier</button></div><small id="exs"></small>
+   </div>
+   <div class="tab" id="t-cloud">
+    <label>Service</label><select id="s3preset"><option value="aws">AWS S3</option><option value="r2">Cloudflare R2</option><option value="scw">Scaleway</option><option value="other">Autre (compatible S3 / MinIO)</option></select>
+    <label>Endpoint (vide pour AWS)</label><input type="text" id="s3e" placeholder="https://s3.fr-par.scw.cloud">
+    <div class="r"><input type="text" id="s3r" placeholder="Région (eu-west-3, fr-par, auto…)"><input type="text" id="s3b" placeholder="Bucket"></div>
+    <div class="r"><input type="text" id="s3a" placeholder="Access key"><input type="text" id="s3s" placeholder="Secret key"></div>
+    <label>Dossier dans le bucket (facultatif)</label><input type="text" id="s3p" placeholder="cartes">
+    <div><span class="chk"><input type="checkbox" class="uk" value="tiles" checked> Tuiles + page de partage</span><span class="chk"><input type="checkbox" class="uk" value="mbtiles" checked> MBTiles</span><span class="chk"><input type="checkbox" class="uk" value="exports" checked> Exports</span></div>
+    <button id="b-up" style="background:#fca311">Envoyer</button><small id="ups"></small>
+    <small>Les clés sont enregistrées en clair sur ce PC. Le bucket doit autoriser la lecture publique (et CORS) pour que le lien soit partageable.</small>
+   </div>
+   <div class="tab" id="t-proj">
+    <div class="r"><button id="b-save" style="background:#fca311">💾 Enregistrer le projet (Ctrl+S)</button><button id="b-openroot">Ouvrir le dossier</button></div><small id="prs"></small>
+    <label>Ouvrir un projet (.ktproj)</label><input type="file" id="pf" accept=".ktproj,.zip">
+    <small>Un projet contient l'image (originale et courante), les points, la méthode et les niveaux de zoom.</small>
+   </div>
+  </div></div>
+</div>
+<div id="status">1) Chargez une image · 2) placez un point sur l'image, puis sa position sur la carte (clic ou coordonnées)</div>
+<dialog id="dlg">
+ <h3 style="margin-top:0">Clés et tokens</h3>
+ Token Mapbox <input id="k-mb" placeholder="pk.…">
+ Clé API Google (Map Tiles API activée) <input id="k-g" placeholder="AIza…">
+ <small>Enregistrés en clair sur ce PC (fichier .kaliphetiles.json dans votre dossier utilisateur).</small>
+ <div class="row" style="justify-content:flex-end;margin-top:12px"><button id="k-cancel">Annuler</button><button id="k-save" style="background:#fca311">Enregistrer</button></div>
+</dialog>
+<script>
+const $=s=>document.querySelector(s), st=t=>$("#status").innerHTML=t;
+
+/*COORDS*/
+const L93="+proj=lcc +lat_0=46.5 +lon_0=3 +lat_1=49 +lat_2=44 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs";
+const DZN="+proj=lcc +lat_1=36 +lat_0=36 +lon_0=2.7 +k_0=0.999625544 +x_0=500135 +y_0=300090 +a=6378249.145 +rf=293.465 +towgs84=-165.914,-70.607,305.009,0,0,0,0 +units=m +no_defs";
+const PARIS=2.33722917; // méridien de Paris : 2°20'14,025" E de Greenwich
+const NUM=/-?\d+(?:[.,]\d+)?/g, num=s=>parseFloat(s.replace(",","."));
+const dms=n=>{const neg=n[0].trim().startsWith("-"),v=n.map(s=>Math.abs(num(s)));const d=v[0]+(v[1]||0)/60+(v[2]||0)/3600;return neg?-d:d};
+function parseGeo(t,lonFirst){
+ let lat,lon;
+ if(/[NSEWOnsewo]/.test(t)){
+  const ch=t.match(/[^NSEWOnsewo]+[NSEWOnsewo]|[NSEWOnsewo][^NSEWOnsewo]+/g)||[];
+  if(ch.length!=2)throw "deux coordonnées attendues (lat et lon)";
+  for(const c of ch){
+   const L=c.match(/[NSEWOnsewo]/)[0].toUpperCase(),n=c.match(NUM);
+   if(!n)throw "nombre manquant";
+   let v=Math.abs(dms(n)); if("SWO".includes(L)||n[0].trim().startsWith("-"))v=-v;
+   if("NS".includes(L))lat=v;else lon=v;
+  }
+  if(lat===undefined||lon===undefined)throw "il faut une latitude (N/S) et une longitude (E/O)";
+ }else{
+  const n=t.match(NUM)||[];
+  if(![2,4,6].includes(n.length))throw "format non reconnu";
+  const h=n.length/2,a=dms(n.slice(0,h)),b=dms(n.slice(h));
+  [lat,lon]=lonFirst?[b,a]:[a,b];
+ }
+ if(Math.abs(lat)>90||Math.abs(lon)>180)throw "latitude/longitude hors limites";
+ return{lon,lat};
+}
+// Grades : "39g 90" = 39,90 grades ; latitude puis longitude (méridien de Paris par défaut)
+function parseGrad(t,paris,lonFirst){
+ const s=t.replace(/(\d)\s*g(?:rad|on|r)?\.?\s*(\d*)/gi,(m,a,b)=>a+(b?"."+b:"")).replace(/[A-Za-z°'"′″]/g," ");
+ const n=(s.match(NUM)||[]).map(num);
+ if(n.length!=2)throw "grades : deux valeurs attendues, ex. 39g 90 , 5g 30";
+ const[a,b]=lonFirst?[n[1],n[0]]:n;
+ const lat=a*0.9,lon=b*0.9+(paris?PARIS:0);
+ if(Math.abs(lat)>90)throw "latitude hors limites";
+ return{lon,lat};
+}
+function parseUTM(t,needBand){
+ const m=t.trim().match(/^(\d{1,2})\s*([A-Za-z])?[\s,;]+(\d+(?:[.,]\d+)?)\s*(?:m?E)?[\s,;]+(\d+(?:[.,]\d+)?)\s*(?:m?N)?$/i);
+ if(!m||(needBand&&!m[2]))return null;
+ const z=+m[1]; if(z<1||z>60)return null;
+ const south=m[2]&&m[2].toUpperCase()<"N";
+ const r=proj4(`+proj=utm +zone=${z}${south?" +south":""} +datum=WGS84 +units=m +no_defs`,"WGS84",[num(m[3]),num(m[4])]);
+ return{lon:r[0],lat:r[1]};
+}
+function parseCoords(t,fmt,lonFirst){
+ t=t.trim(); if(!t)throw "coordonnées vides";
+ const fin=p=>{if(!isFinite(p.lon)||!isFinite(p.lat)||Math.abs(p.lat)>85.06||Math.abs(p.lon)>180)throw "coordonnées hors limites";return p};
+ const proj=(def,t,km)=>{
+  let p=(t.match(NUM)||[]).map(num);
+  if(p.length!=2)throw "deux nombres attendus (X Y)";
+  if(km&&Math.max(Math.abs(p[0]),Math.abs(p[1]))<20000)p=p.map(v=>v*1000);
+  const r=proj4(def,"WGS84",p);return{lon:r[0],lat:r[1]};
+ };
+ if(fmt=="utm"){const u=parseUTM(t,false);if(!u)throw "format UTM : 31T 500000 4800000";return fin(u)}
+ if(fmt=="l93")return fin(proj(L93,t,true));
+ if(fmt=="dzn")return fin(proj(DZN,t,true));
+ if(fmt=="merc")return fin(proj("EPSG:3857",t));
+ if(fmt=="dd")return fin(parseGeo(t,lonFirst));
+ if(fmt=="grp")return fin(parseGrad(t,true,lonFirst));
+ if(fmt=="grg")return fin(parseGrad(t,false,lonFirst));
+ if(/\dg/i.test(t))return fin(parseGrad(t,true,lonFirst));
+ const u=parseUTM(t,true); if(u)return fin(u);
+ try{return fin(parseGeo(t,lonFirst))}catch(e){
+  const p=(t.match(NUM)||[]).map(num);
+  if(p.length==2&&!/[°'"′″NSEWOnsewo]/.test(t)){
+   if(p[0]>=0&&p[0]<=1.4e6&&p[1]>=6e6&&p[1]<=7.3e6)return fin(proj(L93,t));
+   if(p[0]>=3e5&&p[0]<=1.4e6&&p[1]>=1e5&&p[1]<=6e5)return fin(proj(DZN,t));
+   if(p[0]>=300&&p[0]<=1400&&p[1]>=100&&p[1]<=600)return fin(proj(DZN,t,true));
+   if(Math.max(Math.abs(p[0]),Math.abs(p[1]))>1000&&Math.abs(p[0])<=20037508&&Math.abs(p[1])<=20037508)return fin(proj("EPSG:3857",t));
+  }
+  throw e;
+ }
+}
+/*ENDCOORDS*/
+
+// ---------- Fonds de carte ----------
+let cfg={mapbox:"",google:""}, curBase="osm";
+const mb=s=>()=>{if(!cfg.mapbox)throw "Token Mapbox manquant (bouton ⚙ Clés)";return[`https://api.mapbox.com/styles/v1/mapbox/${s}/tiles/256/{z}/{x}/{y}@2x?access_token=${cfg.mapbox}`]};
+const gg=t=>async()=>{
+ if(!cfg.google)throw "Clé Google manquante (bouton ⚙ Clés)";
+ const r=await fetch("https://tile.googleapis.com/v1/createSession?key="+cfg.google,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mapType:t,language:"fr-FR",region:"FR"})});
+ const j=await r.json(); if(!j.session)throw "Google : "+(j.error&&j.error.message||"échec");
+ return[`https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session=${j.session}&key=${cfg.google}`];
+};
+const ign=(l,f)=>()=>[`https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${l}&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=${f}`];
+const BASES={
+ osm:{t:()=>["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],a:"© OpenStreetMap",z:19},
+ topo:{t:()=>["https://tile.opentopomap.org/{z}/{x}/{y}.png"],a:"© OpenTopoMap, OSM",z:17},
+ esri:{t:()=>["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],a:"© Esri",z:19},
+ ignp:{t:ign("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png"),a:"© IGN",z:18},
+ igns:{t:ign("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg"),a:"© IGN",z:19},
+ mbs:{t:mb("satellite-streets-v12"),a:"© Mapbox © OSM",z:22},
+ mbr:{t:mb("streets-v12"),a:"© Mapbox © OSM",z:22},
+ mbo:{t:mb("outdoors-v12"),a:"© Mapbox © OSM",z:22},
+ gr:{t:gg("roadmap"),a:"© Google",z:22},
+ gs:{t:gg("satellite"),a:"© Google",z:22}
+};
+const map=new maplibregl.Map({container:"map",center:[2.5,46.6],zoom:4.5,style:{version:8,glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",sources:{},layers:[]}});
+map.addControl(new maplibregl.NavigationControl({visualizePitch:false}),"bottom-right");
+map.addControl(new maplibregl.ScaleControl(),"bottom-left");
+async function setBase(id){
+ try{
+  const b=BASES[id],tiles=await b.t();
+  if(map.getLayer("base"))map.removeLayer("base");
+  if(map.getSource("base"))map.removeSource("base");
+  map.addSource("base",{type:"raster",tiles,tileSize:256,maxzoom:b.z,attribution:b.a});
+  map.addLayer({id:"base",type:"raster",source:"base"},map.getLayer("res")?"res":"grid-l");
+  curBase=id;
+ }catch(e){
+  $("#base").value=curBase; st("⚠️ "+(e.message||e));
+  if(/Token|Clé|Google/.test(String(e.message||e)))openCfg();
+ }
+}
+map.on("load",()=>{
+ map.addSource("grid",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
+ map.addLayer({id:"grid-l",type:"line",source:"grid",paint:{"line-color":"#d00000","line-width":1,"line-opacity":.75}});
+ map.addLayer({id:"grid-t",type:"symbol",source:"grid",layout:{"symbol-placement":"line","symbol-spacing":320,"text-field":["get","label"],"text-font":["Open Sans Regular,Arial Unicode MS Regular"],"text-size":11},paint:{"text-color":"#900000","text-halo-color":"#fff","text-halo-width":1.6}});
+ setBase("osm");
+});
+$("#base").onchange=e=>setBase(e.target.value);
+
+// ---------- Clés ----------
+fetch("/api/settings").then(r=>r.json()).then(s=>{cfg={mapbox:s.mapbox||"",google:s.google||"",s3:s.s3||{}};loadS3()});
+function openCfg(){$("#k-mb").value=cfg.mapbox;$("#k-g").value=cfg.google;$("#dlg").showModal()}
+$("#cfg").onclick=openCfg; $("#k-cancel").onclick=()=>$("#dlg").close();
+$("#k-save").onclick=async()=>{
+ cfg={...cfg,mapbox:$("#k-mb").value.trim(),google:$("#k-g").value.trim()};
+ await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
+ $("#dlg").close(); st("Clés enregistrées"); setBase($("#base").value);
+};
+
+// ---------- Recherche de lieu ----------
+async function search(){
+ const q=$("#q").value.trim(); if(!q)return; const L=$("#res-list");
+ try{
+  const j=await (await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=fr&q="+encodeURIComponent(q))).json();
+  L.innerHTML=j.length?"":"<div>Aucun résultat</div>";
+  j.forEach(x=>{const d=document.createElement("div");d.textContent=x.display_name;
+   d.onclick=()=>{L.innerHTML="";const b=x.boundingbox.map(Number);map.fitBounds([[b[2],b[0]],[b[3],b[1]]],{maxZoom:17,padding:30})};L.appendChild(d)});
+ }catch(e){st("⚠️ Recherche impossible : "+e)}
+}
+$("#qgo").onclick=search; $("#q").onkeydown=e=>{if(e.key=="Enter")search()};
+
+// ---------- Visionneuse d'image (zoom + déplacement) ----------
+let id=null,nat={w:0,h:0},k=1,tx=0,ty=0;
+const iv=$("#iv"),ib=$("#ib");
+const apply=()=>{ib.style.transform=`translate(${tx}px,${ty}px) scale(${k})`;ib.style.setProperty("--inv",1/k)};
+function fit(){const r=iv.getBoundingClientRect();k=Math.min(r.width/nat.w,r.height/nat.h)*.95;tx=(r.width-nat.w*k)/2;ty=(r.height-nat.h*k)/2;apply()}
+function zoomAt(f,cx,cy){const nk=Math.min(40,Math.max(.01,k*f));tx=cx-(cx-tx)*nk/k;ty=cy-(cy-ty)*nk/k;k=nk;apply()}
+iv.addEventListener("wheel",e=>{e.preventDefault();const r=iv.getBoundingClientRect();zoomAt(e.deltaY<0?1.25:.8,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+const mid=f=>()=>{if(nat.w){const r=iv.getBoundingClientRect();zoomAt(f,r.width/2,r.height/2)}};
+$("#zi").onclick=mid(1.5);$("#zo").onclick=mid(1/1.5);$("#zf").onclick=()=>nat.w&&fit();
+let drag=null,tool="pts",rect=null,cropBox=null,angPts=[],colors=[];
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const toNat=e=>{const r=iv.getBoundingClientRect();return[(e.clientX-r.left-tx)/k,(e.clientY-r.top-ty)/k]};
+function drawRect(){
+ const el=$("#cr");if(!el)return;const b=rect?[rect.x0,rect.y0,rect.x1,rect.y1]:cropBox;
+ if(!b){el.style.display="none";return}
+ Object.assign(el.style,{display:"block",left:Math.min(b[0],b[2])+"px",top:Math.min(b[1],b[3])+"px",width:Math.abs(b[2]-b[0])+"px",height:Math.abs(b[3]-b[1])+"px"});
+}
+iv.onpointerdown=e=>{
+ if(e.target.closest(".zb"))return;
+ if(tool=="crop"){const[x,y]=toNat(e),X=clamp(x,0,nat.w),Y=clamp(y,0,nat.h);rect={x0:X,y0:Y,x1:X,y1:Y};iv.setPointerCapture(e.pointerId);return}
+ drag={x:e.clientX,y:e.clientY,tx,ty,m:false};iv.setPointerCapture(e.pointerId)};
+iv.onpointermove=e=>{
+ if(rect){const[x,y]=toNat(e);rect.x1=clamp(x,0,nat.w);rect.y1=clamp(y,0,nat.h);drawRect();return}
+ if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>4)drag.m=true;if(drag.m){tx=drag.tx+dx;ty=drag.ty+dy;apply()}};
+iv.onpointerup=e=>{
+ if(rect){const b=[Math.min(rect.x0,rect.x1),Math.min(rect.y0,rect.y1),Math.max(rect.x0,rect.x1),Math.max(rect.y0,rect.y1)];rect=null;
+  cropBox=(b[2]-b[0]>8&&b[3]-b[1]>8)?b:null;drawRect();$("#cropinfo").textContent=cropBox?`Zone : ${Math.round(b[2]-b[0])} × ${Math.round(b[3]-b[1])} px`:"Zone trop petite";return}
+ if(!drag)return;const d=drag;drag=null;
+ if(d.m||!nat.w)return;const[px,py]=toNat(e);if(px<0||py<0||px>nat.w||py>nat.h)return;
+ if(tool=="pts")setImg(px,py);
+ else if(tool=="pick")pickColor(px,py);
+ else if(tool=="angle"){angPts.push([px,py]);if(angPts.length==2){let a=Math.atan2(angPts[1][1]-angPts[0][1],angPts[1][0]-angPts[0][0])*180/Math.PI;if(a>90)a-=180;if(a<-90)a+=180;$("#rot").value=a.toFixed(2);angPts=[];setTool("pts");st(`Angle mesuré : ${a.toFixed(2)}° → cliquez « Pivoter » (onglet Image)`)}}
+};
+
+// ---------- Grille ----------
+/*GRID*/
+const nice=x=>{const e=Math.pow(10,Math.floor(Math.log10(x))),m=x/e;return(m<=1?1:m<=2?2:m<=5?5:10)*e};
+function gridSys(sys,lon,lat){
+ if(sys=="ll")return{ll:true,unit:"°",k:111320,fwd:(a,b)=>[a,b],inv:(x,y)=>[x,y]};
+ if(sys=="gp")return{ll:true,gr:true,unit:" gr",k:100188,fwd:(a,b)=>[(a-PARIS)/0.9,b/0.9],inv:(x,y)=>[x*0.9+PARIS,y*0.9]};
+ let def=sys=="dzn"?DZN:L93;
+ if(sys=="utm"){const z=Math.min(60,Math.max(1,Math.floor((lon+180)/6)+1));def=`+proj=utm +zone=${z}${lat<0?" +south":""} +datum=WGS84 +units=m +no_defs`}
+ const c=proj4("WGS84",def);
+ return{ll:false,km:sys=="dzn",unit:" m",k:1,fwd:(a,b)=>c.forward([a,b]),inv:(x,y)=>c.inverse([x,y])};
+}
+function buildGrid(B,sys,manual,zoom){
+ const clat=(B.s+B.n)/2,clon=(B.w+B.e)/2,g=gridSys(sys,clon,clat);
+ const s=Math.max(B.s,-84),n=Math.min(B.n,84),P=[];
+ for(let i=0;i<=12;i++){const t=i/12,lo=B.w+(B.e-B.w)*t,la=s+(n-s)*t;P.push([lo,s],[lo,n],[B.w,la],[B.e,la])}
+ const Q=P.map(p=>g.fwd(p[0],p[1]));
+ let minX=Math.min(...Q.map(q=>q[0])),maxX=Math.max(...Q.map(q=>q[0])),minY=Math.min(...Q.map(q=>q[1])),maxY=Math.max(...Q.map(q=>q[1]));
+ if(g.ll){const L=g.gr?94:85;minY=Math.max(minY,-L);maxY=Math.min(maxY,L)}
+ const mpp=78271.517*Math.cos(clat*Math.PI/180)/Math.pow(2,zoom);
+ const cnt=t=>(maxX-minX)/t+(maxY-minY)/t;
+ let step=manual>0?manual:nice(120*mpp/g.k);
+ if(manual>0){if(cnt(step)>800)return{features:[],step,g}}else while(cnt(step)>400)step*=2;
+ const dec=Math.min(8,Math.max(0,-Math.floor(Math.log10(step)+1e-9)));
+ const lab=(v,isX)=>g.gr?(v<0?"-":"")+Math.abs(v).toFixed(Math.max(2,dec)).replace(".","g ")
+  :g.ll?`${Math.abs(v).toFixed(dec)}°${isX?(v<0?"W":"E"):(v<0?"S":"N")}`
+  :g.km?`${isX?"X":"Y"} ${(v/1000).toFixed(Math.max(0,dec-3))}`
+  :`${isX?"X":"Y"} ${v.toFixed(dec)}`;
+ const feats=[],N=24;
+ for(let i=Math.ceil(minX/step);i<=Math.floor(maxX/step);i++){const x=i*step,co=[];for(let j=0;j<=N;j++)co.push(g.inv(x,minY+(maxY-minY)*j/N));feats.push({type:"Feature",properties:{label:lab(x,true)},geometry:{type:"LineString",coordinates:co}})}
+ for(let i=Math.ceil(minY/step);i<=Math.floor(maxY/step);i++){const y=i*step,co=[];for(let j=0;j<=N;j++)co.push(g.inv(minX+(maxX-minX)*j/N,y));feats.push({type:"Feature",properties:{label:lab(y,false)},geometry:{type:"LineString",coordinates:co}})}
+ return{features:feats,step,g};
+}
+/*ENDGRID*/
+let gridState=null,gq=0;
+function drawGrid(){
+ const src=map.getSource("grid");if(!src)return;
+ if(!$("#gon").checked){src.setData({type:"FeatureCollection",features:[]});gridState=null;$("#gstep").textContent="";return}
+ const b=map.getBounds();
+ try{
+  const r=buildGrid({w:b.getWest(),s:b.getSouth(),e:b.getEast(),n:b.getNorth()},$("#gsys").value,parseFloat($("#gst").value.replace(",",".")),map.getZoom());
+  const f=r.features.filter(x=>x.geometry.coordinates.every(c=>isFinite(c[0])&&isFinite(c[1])));
+  src.setData({type:"FeatureCollection",features:f});
+  gridState={...r.g,step:r.step};
+  $("#gstep").textContent=f.length?"pas "+r.step+r.g.unit:"pas trop petit";
+ }catch(e){}
+}
+map.on("move",()=>{if(!gq){gq=1;requestAnimationFrame(()=>{gq=0;drawGrid()})}});
+["gon","gsys"].forEach(i=>$("#"+i).onchange=drawGrid);$("#gst").oninput=drawGrid;
+
+// ---------- Points de contrôle (annuler/rétablir, déplacer, supprimer) ----------
+let gcps=[],pend={img:null,geo:null},mm=[],sel=-1,hist=[],fut=[];
+const stateJS=()=>JSON.stringify({gcps,pend});
+const commit=()=>{hist.push(stateJS());if(hist.length>300)hist.shift();fut=[]};   // à appeler AVANT une modification
+const restore=js=>{const o=JSON.parse(js);gcps=o.gcps;pend=o.pend;sel=-1;redraw()};
+const undo=()=>{if(hist.length){fut.push(stateJS());restore(hist.pop())}};
+const redo=()=>{if(fut.length){hist.push(stateJS());restore(fut.pop())}};
+const badge=(n,c)=>{const e=document.createElement("div");e.className="pt "+c;e.textContent=n;return e};
+const place=(e,p)=>{e.style.left=p.px+"px";e.style.top=p.py+"px"};
+function del(i){commit();gcps.splice(i,1);sel=-1;redraw()}
+function centerImg(px,py){const r=iv.getBoundingClientRect();tx=r.width/2-px*k;ty=r.height/2-py*k;apply()}
+function dragImg(e,i){
+ e.oncontextmenu=ev=>{ev.preventDefault();del(i)};
+ e.onpointerdown=ev=>{
+  ev.stopPropagation();ev.preventDefault();e.setPointerCapture(ev.pointerId);
+  let moved=false;sel=i;
+  const mv=x=>{
+   const r=iv.getBoundingClientRect();
+   if(!moved){moved=true;commit()}
+   gcps[i].px=Math.min(nat.w,Math.max(0,(x.clientX-r.left-tx)/k));
+   gcps[i].py=Math.min(nat.h,Math.max(0,(x.clientY-r.top-ty)/k));
+   place(e,gcps[i]);
+  };
+  const up=()=>{e.removeEventListener("pointermove",mv);e.removeEventListener("pointerup",up);redraw()};
+  e.addEventListener("pointermove",mv);e.addEventListener("pointerup",up);
+ };
+}
+function redraw(){
+ ib.querySelectorAll(".ip").forEach(x=>x.remove());mm.forEach(m=>m.remove());mm=[];
+ gcps.forEach((g,i)=>{
+  const e=badge(i+1,"ip"+(i==sel?" sel":""));place(e,g);dragImg(e,i);ib.appendChild(e);
+  const me=badge(i+1,i==sel?"sel":"");
+  const m=new maplibregl.Marker({element:me,draggable:true}).setLngLat([g.lon,g.lat]).addTo(map);
+  m.on("dragstart",()=>commit());
+  m.on("dragend",()=>{const l=m.getLngLat();gcps[i].lon=l.lng;gcps[i].lat=l.lat;sel=i;redraw()});
+  me.addEventListener("click",ev=>{ev.stopPropagation();sel=i;redraw()});
+  me.oncontextmenu=ev=>{ev.preventDefault();del(i)};
+  mm.push(m);
+ });
+ if(pend.img){const e=badge(gcps.length+1,"ip wait");place(e,pend.img);ib.appendChild(e)}
+ if(pend.geo)mm.push(new maplibregl.Marker({element:badge(gcps.length+1,"wait")}).setLngLat([pend.geo.lon,pend.geo.lat]).addTo(map));
+ $("#list").innerHTML=gcps.map((g,i)=>`<div data-r="${i}" class="${i==sel?"sel":""}"><b>${i+1}</b><span>image ${g.px.toFixed(0)}, ${g.py.toFixed(0)} → lat ${g.lat.toFixed(6)}, lon ${g.lon.toFixed(6)}</span><a href="#" data-i="${i}">✕</a></div>`).join("")||"<div>Aucun point</div>";
+ $("#go").disabled=!id||gcps.length<3;scheduleEst();
+ st(!id?"Chargez d'abord une image":pend.img?"Point image placé → donnez sa position sur la carte (clic ou coordonnées)":pend.geo?"Position carte placée → cliquez le point correspondant sur l'image":sel>=0?`Point ${sel+1} sélectionné · glisser = déplacer · Suppr (ou clic droit) = supprimer · Ctrl+Z / Ctrl+Y`:`${gcps.length} point(s) · cliquez un point sur l'image (ou une position sur la carte)`);
+}
+function tryDone(){if(pend.img&&pend.geo){gcps.push({...pend.img,...pend.geo});pend={img:null,geo:null};sel=gcps.length-1}redraw()}
+function setImg(px,py){commit();pend.img={px,py};tryDone()}
+function setGeo(lon,lat){commit();pend.geo={lon,lat};tryDone()}
+map.on("click",e=>{
+ const t=e.originalEvent.target;if(t&&t.closest&&t.closest(".pt"))return;
+ let{lng,lat}=e.lngLat,snapped=null;
+ if($("#gon").checked&&$("#snap").checked&&gridState){
+  const g=gridState,[x,y]=g.fwd(lng,lat),sx=Math.round(x/g.step)*g.step,sy=Math.round(y/g.step)*g.step;
+  [lng,lat]=g.inv(sx,sy);
+  const d=Math.max(0,-Math.floor(Math.log10(g.step)+1e-9));
+  snapped=g.gr?`${sy.toFixed(Math.max(2,d))} gr / ${sx.toFixed(Math.max(2,d))} gr`:g.ll?`lat ${sy.toFixed(d)}°, lon ${sx.toFixed(d)}°`:`X ${sx.toFixed(d)} · Y ${sy.toFixed(d)}`;
+ }
+ setGeo(lng,lat);
+ if(snapped)st("🧲 Aimanté sur l'intersection "+snapped+" → maintenant le point correspondant sur l'image");
+});
+$("#list").onclick=e=>{
+ const a=e.target.closest("a");
+ if(a){e.preventDefault();del(+a.dataset.i);return}
+ const r=e.target.closest("[data-r]");if(!r)return;
+ sel=+r.dataset.r;const g=gcps[sel];redraw();
+ map.flyTo({center:[g.lon,g.lat],zoom:Math.max(map.getZoom(),13)});centerImg(g.px,g.py);
+};
+$("#undo").onclick=undo;$("#redo").onclick=redo;
+document.addEventListener("keydown",e=>{
+ const T=e.target,tag=(T.tagName||"").toLowerCase();
+ if(tag=="textarea"||(tag=="input"&&["text","number"].includes(T.type)))return;
+ const c=e.ctrlKey||e.metaKey,key=e.key.toLowerCase();
+ if(c&&key=="z"&&!e.shiftKey){e.preventDefault();undo()}
+ else if(c&&(key=="y"||(key=="z"&&e.shiftKey))){e.preventDefault();redo()}
+ else if((e.key=="Delete"||e.key=="Backspace")&&sel>=0){e.preventDefault();del(sel)}
+ else if(c&&key=="s"){e.preventDefault();$("#b-save").click()}
+ else if(e.key=="Escape"){if(pend.img||pend.geo){commit();pend={img:null,geo:null}}else sel=-1;redraw()}
+});
+function placeCoord(){
+ try{
+  const p=parseCoords($("#coord").value,$("#cf").value,$("#lf").checked);
+  setGeo(p.lon,p.lat); map.flyTo({center:[p.lon,p.lat],zoom:Math.max(map.getZoom(),14)});
+ }catch(e){st("⚠️ "+(e.message||e))}
+}
+$("#cgo").onclick=placeCoord; $("#coord").onkeydown=e=>{if(e.key=="Enter")placeCoord()};
+
+// ---------- Envoi / traitement ----------
+$("#file").onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;st("Envoi…");
+ const fd=new FormData();fd.append("file",f);
+ const r=await fetch("/api/maps",{method:"POST",body:fd});
+ if(!r.ok){st("Erreur : "+(await r.json()).detail);return}
+ const j=await r.json();id=j.id;nat={w:j.width,h:j.height};gcps=[];pend={img:null,geo:null};hist=[];fut=[];sel=-1;
+ if(map.getLayer("res")){map.removeLayer("res");map.removeSource("res")}
+ showImage(j);redraw();
+};
+$("#go").onclick=async()=>{
+ $("#go").disabled=true;st("Traitement en cours…");
+ const r=await fetch(`/api/maps/${id}/process`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({gcps,method:$("#method").value,zmin:+$("#zmin").value,zmax:+$("#zmax").value})});
+ if(!r.ok){st("Erreur : "+(await r.json()).detail);$("#go").disabled=false;return}
+ const t=setInterval(async()=>{
+  const m=await (await fetch("/api/maps/"+id)).json();
+  if(m.status==="processing")st("Génération des tuiles… "+Math.round((m.progress||0)*100)+" %");
+  if(m.status==="done"){clearInterval(t);showResult(m);$("#go").disabled=false}
+  if(m.status==="error"){clearInterval(t);st("Erreur : "+m.error);$("#go").disabled=false}
+ },1000);
+};
+function showResult(m){
+ if(map.getLayer("res")){map.removeLayer("res");map.removeSource("res")}
+ map.addSource("res",{type:"raster",tileSize:256,bounds:m.bounds,tiles:[location.origin+"/data/"+id+"/tiles/{z}/{x}/{y}.png"]});
+ map.addLayer({id:"res",type:"raster",source:"res"},"grid-l");
+ map.fitBounds([[m.bounds[0],m.bounds[1]],[m.bounds[2],m.bounds[3]]],{padding:40});
+ const e=m.errors||[],rm=Math.sqrt(e.reduce((a,b)=>a+b*b,0)/e.length).toFixed(1);
+ st(`✅ Terminé · erreur moyenne ${rm} px (max ${Math.max(...e).toFixed(1)}) · opacité <input id="op" type="range" min="0" max="1" step=".05" value="1"> · <a href="#" id="of">Ouvrir le dossier (MBTiles + tuiles)</a>`);
+ $("#op").oninput=ev=>map.setPaintProperty("res","raster-opacity",+ev.target.value);
+ $("#of").onclick=ev=>{ev.preventDefault();fetch(`/api/maps/${id}/open`,{method:"POST"})};
+}
+
+// ---------- Fenêtres flottantes + onglets ----------
+let Zi=10;
+document.querySelectorAll(".win").forEach(w=>{
+ const h=w.querySelector(".wh");w.addEventListener("pointerdown",()=>w.style.zIndex=++Zi,true);
+ h.onpointerdown=e=>{
+  if(e.target.closest("button"))return;
+  const W=$("#ws").getBoundingClientRect(),r=w.getBoundingClientRect(),ox=e.clientX-r.left,oy=e.clientY-r.top;
+  h.setPointerCapture(e.pointerId);
+  h.onpointermove=ev=>{w.style.left=Math.max(0,ev.clientX-W.left-ox)+"px";w.style.top=Math.max(0,ev.clientY-W.top-oy)+"px"};
+  h.onpointerup=()=>{h.onpointermove=null};
+ };
+ w.querySelector(".wm").onclick=()=>w.classList.toggle("min");
+});
+new ResizeObserver(()=>map.resize()).observe($("#map"));
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll(".tabs button,.tab").forEach(x=>x.classList.remove("on"));b.classList.add("on");$("#t-"+b.dataset.t).classList.add("on")});
+
+// ---------- Image : rogner, pivoter, couleurs ----------
+function showImage(j,keep){
+ id=j.id||id;nat={w:j.width,h:j.height};
+ ib.innerHTML=`<img src="${j.image}?t=${Date.now()}" width="${j.width}" height="${j.height}"><div id="cr"></div>`;
+ if(!keep)fit();
+}
+function setTool(t){
+ tool=t;angPts=[];["crop","pick","angle"].forEach(x=>$("#b-"+x).classList.toggle("on",x==t));
+ iv.style.cursor=t=="pts"?"crosshair":"cell";
+ if(t!="pts")st({crop:"Rogner : tracez un rectangle sur l'image",pick:"Pipette : cliquez une couleur à supprimer",angle:"Cliquez 2 points d'une ligne qui doit être horizontale"}[t]);
+}
+$("#b-crop").onclick=()=>setTool(tool=="crop"?"pts":"crop");
+$("#b-pick").onclick=()=>setTool(tool=="pick"?"pts":"pick");
+$("#b-ang").onclick=()=>setTool(tool=="angle"?"pts":"angle");
+async function edit(body,keep){
+ if(!id)return st("Chargez d'abord une image");
+ st("Traitement de l'image…");
+ const r=await fetch(`/api/maps/${id}/edit`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,gcps})});
+ if(!r.ok)return st("⚠️ "+(await r.json()).detail);
+ const j=await r.json();hist=[];fut=[];gcps=j.gcps;pend={img:null,geo:null};sel=-1;cropBox=null;$("#cropinfo").textContent="";
+ setTool("pts");showImage(j,keep);redraw();
+}
+$("#b-cropgo").onclick=()=>cropBox?edit({op:"crop",box:cropBox}):st("Tracez d'abord une zone (« Sélectionner la zone »)");
+$("#b-rot").onclick=()=>{const a=parseFloat($("#rot").value);a?edit({op:"rotate",angle:a}):st("Angle nul")};
+$("#b-reset").onclick=()=>{if(id&&confirm("Restaurer l'image d'origine ? Les points seront supprimés."))edit({op:"reset"})};
+function renderColors(){$("#sws").innerHTML=colors.map((c,i)=>`<span class="sw" data-i="${i}" style="background:rgb(${c})" title="rgb(${c})">✕</span>`).join("")}
+$("#sws").onclick=e=>{const s=e.target.closest(".sw");if(s){colors.splice(+s.dataset.i,1);renderColors()}};
+function pickColor(px,py){
+ const im=ib.querySelector("img"),c=document.createElement("canvas");c.width=c.height=1;
+ const g=c.getContext("2d",{willReadFrequently:true});g.drawImage(im,px,py,1,1,0,0,1,1);
+ const d=g.getImageData(0,0,1,1).data;if(d[3]<10)return;colors.push([d[0],d[1],d[2]]);renderColors();
+}
+$("#b-rm").onclick=async()=>{if(!colors.length)return st("Choisissez d'abord des couleurs avec la pipette");await edit({op:"remove",colors,tol:+$("#tol").value},true);colors=[];renderColors()};
+
+// ---------- Localisation (fichiers world, Ozi, TAB, emprise, affine, coins) ----------
+function toLL(x,y){
+ const c=$("#lcrs").value;
+ if(c=="wgs")return[x,y];
+ if(c=="merc")return proj4("EPSG:3857","WGS84",[x,y]);
+ const def=c=="utm"?`+proj=utm +zone=${+$("#lz").value||31}${$("#lh").value=="S"?" +south":""} +datum=WGS84 +units=m +no_defs`:c=="l93"?L93:DZN;
+ return proj4(def,"WGS84",[x,y]);
+}
+let locPts=null;
+function showLoc(){const m=$("#lm").value;document.querySelectorAll("[data-m]").forEach(e=>e.style.display=e.dataset.m.split(" ").includes(m)?"":"none");locPts=null}
+$("#lm").onchange=showLoc;showLoc();
+$("#lf").onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ try{
+  const t=await f.text(),m=$("#lm").value;
+  if(m=="wld"){const n=t.match(NUM);if(!n||n.length<6)throw"fichier world invalide (6 lignes attendues)";$("#aff").value=n.slice(0,6).join("\n");st("Valeurs chargées : choisissez le système de coordonnées, puis Appliquer");return}
+  const P=[];
+  if(m=="tab"){const re=/\(\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\)\s*\(\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\)/g;let a;while((a=re.exec(t)))P.push([+a[3],+a[4],+a[1],+a[2],false])}
+  if(m=="ozi")for(const l of t.split(/\r?\n/)){
+   if(!/^Point\d+/i.test(l))continue;const c=l.split(",").map(x=>x.trim()),x=parseFloat(c[2]),y=parseFloat(c[3]);
+   if(isNaN(x)||isNaN(y)||c[6]===""||c[6]===undefined)continue;
+   P.push([x,y,(+c[9]+(+c[10])/60)*(c[11]=="W"?-1:1),(+c[6]+(+c[7])/60)*(c[8]=="S"?-1:1),true]);
+  }
+  if(P.length<3)throw"moins de 3 points de calage trouvés dans ce fichier";
+  locPts=P;st(`${P.length} points lus : cliquez Appliquer`);
+ }catch(err){st("⚠️ "+(err.message||err))}
+};
+function applyLoc(){
+ try{
+  if(!id)throw"Chargez d'abord une image";
+  const m=$("#lm").value,W=nat.w,H=nat.h,N=s=>parseFloat($("#"+s).value.replace(",","."));
+  let P=[];
+  if(m=="vis")throw"Mode visuel : placez les points sur l'image et la carte";
+  if(m=="bbox"){const[w,s,e,n]=["bw","bs","be","bn"].map(N);if([w,s,e,n].some(isNaN))throw"4 valeurs attendues";P=[[0,0,w,n],[W,0,e,n],[W,H,e,s],[0,H,w,s]]}
+  else if(m=="aff"||m=="wld"){const n=($("#aff").value.match(NUM)||[]).map(num);if(n.length!=6)throw"6 nombres attendus (A D B E C F)";const[A,D,B,E,C,F]=n;
+   P=[[0,0],[W,0],[W,H],[0,H],[W/2,H/2]].map(([x,y])=>[x,y,A*(x-.5)+B*(y-.5)+C,D*(x-.5)+E*(y-.5)+F])}
+  else if(m=="cor"){const n=($("#cor").value.match(NUM)||[]).map(num);if(n.length!=6)throw"6 nombres attendus";const[x1,y1,x2,y2,x3,y3]=n;P=[[0,0,x1,y1],[W,0,x2,y2],[W,H,x3,y3],[0,H,x1+x3-x2,y1+y3-y2]]}
+  else{if(!locPts)throw"Chargez d'abord le fichier";P=locPts}
+  const g=P.map(p=>{const[lon,lat]=p[4]?[p[2],p[3]]:toLL(p[2],p[3]);return{px:p[0],py:p[1],lon,lat}});
+  if(g.some(q=>!isFinite(q.lon)||!isFinite(q.lat)||Math.abs(q.lat)>85))throw"coordonnées invalides pour ce système";
+  commit();gcps=g;pend={img:null,geo:null};sel=-1;redraw();
+  const b=g.reduce((a,q)=>[Math.min(a[0],q.lon),Math.min(a[1],q.lat),Math.max(a[2],q.lon),Math.max(a[3],q.lat)],[180,90,-180,-90]);
+  map.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:40});
+  st(`${g.length} points créés — vérifiez sur la carte, puis « Géoréférencer »`);
+ }catch(e){st("⚠️ "+(e.message||e))}
+}
+$("#b-loc").onclick=applyLoc;
+
+// ---------- Zoom des tuiles (range slider 0–24) + estimation ----------
+let et=0,nativeZ=18;
+function zr(e){
+ let a=+$("#zmin").value,b=+$("#zmax").value;
+ if(e&&e.target.id=="zmin"&&a>b)$("#zmax").value=b=a;else if(e&&e.target.id=="zmax"&&b<a)$("#zmin").value=a=b;
+ $("#zl").textContent=`Zoom ${a} → ${b}`;
+ $("#rt").style.background=`linear-gradient(90deg,#ccc ${a/24*100}%,#fca311 ${a/24*100}%,#fca311 ${b/24*100}%,#ccc ${b/24*100}%)`;
+ scheduleEst();
+}
+$("#zmin").oninput=zr;$("#zmax").oninput=zr;
+$("#b-auto").onclick=()=>{$("#zmax").value=nativeZ;$("#zmin").value=Math.max(0,nativeZ-6);zr()};
+function scheduleEst(){
+ clearTimeout(et);
+ et=setTimeout(async()=>{
+  const el=$("#est");if(!id||gcps.length<3){el.textContent=gcps.length&&id?"3 points minimum pour estimer":"";return}
+  try{
+   const r=await fetch(`/api/maps/${id}/estimate`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({gcps,method:$("#method").value,zmin:+$("#zmin").value,zmax:+$("#zmax").value})});
+   const j=await r.json();if(!r.ok){el.textContent=j.detail;return}
+   nativeZ=j.native;el.textContent=`≈ ${j.total.toLocaleString("fr-FR")} tuiles · zoom natif de l'image ≈ ${j.native}`+(j.total>500000?" ⚠️ trop de tuiles (max 500 000)":"");
+  }catch(e){}
+ },500);
+}
+$("#method").onchange=scheduleEst;zr();
+
+// ---------- Export ----------
+$("#b-exp").onclick=async()=>{
+ const kinds=[...document.querySelectorAll(".xk:checked")].map(x=>x.value),el=$("#exs");
+ if(!id||gcps.length<3){el.textContent="Placez d'abord au moins 3 points";return}
+ if(!kinds.length){el.textContent="Choisissez au moins un format";return}
+ el.textContent="Export en cours…";
+ const r=await fetch(`/api/maps/${id}/export`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({gcps,method:$("#method").value,kinds,crs:$("#ocrs").value,max_px:+$("#maxpx").value})});
+ const j=await r.json();el.textContent=r.ok?"✅ "+j.files.join(" · "):"⚠️ "+j.detail;
+};
+$("#b-open").onclick=()=>id&&fetch(`/api/maps/${id}/open`,{method:"POST"});
+
+// ---------- Cloud (S3 / R2 / Scaleway / MinIO) ----------
+const S3F={endpoint:"s3e",region:"s3r",bucket:"s3b",access_key:"s3a",secret_key:"s3s",prefix:"s3p"};
+function loadS3(){const s=cfg.s3||{};for(const k in S3F)$("#"+S3F[k]).value=s[k]||""}
+$("#s3preset").onchange=e=>{const p={aws:["","eu-west-3"],r2:["https://<ACCOUNT_ID>.r2.cloudflarestorage.com","auto"],scw:["https://s3.fr-par.scw.cloud","fr-par"],other:["","us-east-1"]}[e.target.value];$("#s3e").value=p[0];$("#s3r").value=p[1]};
+$("#b-up").onclick=async()=>{
+ const el=$("#ups");if(!id)return el.textContent="Chargez d'abord une image";
+ const s3={};for(const k in S3F)s3[k]=$("#"+S3F[k]).value.trim();
+ cfg.s3=s3;fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
+ const what=[...document.querySelectorAll(".uk:checked")].map(x=>x.value);
+ const r=await fetch(`/api/maps/${id}/upload`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({s3,what})});
+ if(!r.ok)return el.textContent="⚠️ "+(await r.json()).detail;
+ el.textContent="Envoi…";
+ const t=setInterval(async()=>{
+  const u=(await (await fetch("/api/maps/"+id)).json()).upload||{};
+  if(u.status=="running")el.textContent="Envoi… "+Math.round((u.progress||0)*100)+" %";
+  if(u.status=="error"){clearInterval(t);el.textContent="⚠️ "+u.error}
+  if(u.status=="done"){clearInterval(t);el.innerHTML=`✅ ${u.count} fichiers<br>Page de partage : <b>${u.viewer}</b><br>URL de tuiles (QGIS, Leaflet…) : <b>${u.xyz}</b>`}
+ },1000);
+};
+
+// ---------- Projet ----------
+$("#b-save").onclick=async()=>{
+ if(!id)return st("Rien à enregistrer");
+ const r=await fetch(`/api/maps/${id}/save`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({gcps,method:$("#method").value,zmin:+$("#zmin").value,zmax:+$("#zmax").value,crs:$("#ocrs").value})});
+ const j=await r.json();$("#prs").textContent="💾 "+j.path;st("💾 Projet enregistré : "+j.path);
+};
+$("#b-openroot").onclick=()=>fetch("/api/open_root",{method:"POST"});
+$("#pf").onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;const fd=new FormData();fd.append("file",f);
+ const r=await fetch("/api/projects/open",{method:"POST",body:fd}),j=await r.json();
+ if(!r.ok)return st("⚠️ "+j.detail);
+ const p=j.project;showImage(j);hist=[];fut=[];gcps=p.gcps||[];pend={img:null,geo:null};sel=-1;
+ $("#method").value=p.method||"affine";$("#zmin").value=p.zmin??0;$("#zmax").value=p.zmax??18;$("#ocrs").value=p.crs||"3857";zr();redraw();
+ if(map.getLayer("res")){map.removeLayer("res");map.removeSource("res")}
+ if(gcps.length){const b=gcps.reduce((a,q)=>[Math.min(a[0],q.lon),Math.min(a[1],q.lat),Math.max(a[2],q.lon),Math.max(a[3],q.lat)],[180,90,-180,-90]);map.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:40})}
+ st("Projet ouvert : "+p.name);
+};
+redraw();
+</script></body></html>
