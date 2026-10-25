@@ -62,7 +62,7 @@ dialog input{width:100%;padding:6px;margin:4px 0 12px}dialog small{color:#555}
  <select id="base">
   <optgroup label="Gratuits">
    <option value="osm">OpenStreetMap</option><option value="topo">Topo (OpenTopoMap)</option>
-   <option value="esri">Satellite (Esri)</option><option value="ignp">IGN Plan</option><option value="igns">IGN Photo aérienne</option></optgroup>
+   <option value="esri">Satellite (Esri)</option><option value="esrit">Topo (Esri)</option><option value="esrir">Rues (Esri)</option><option value="carto">CARTO Voyager</option><option value="ignp">IGN Plan</option><option value="igns">IGN Photo aérienne</option></optgroup>
   <optgroup label="Mapbox (token)"><option value="mbs">Mapbox Satellite</option><option value="mbr">Mapbox Rues</option><option value="mbo">Mapbox Outdoors</option></optgroup>
   <optgroup label="Google (clé API)"><option value="gr">Google Plan</option><option value="gs">Google Satellite</option></optgroup>
  </select>
@@ -245,6 +245,9 @@ const BASES={
  osm:{t:()=>["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],a:"© OpenStreetMap",z:19},
  topo:{t:()=>["https://tile.opentopomap.org/{z}/{x}/{y}.png"],a:"© OpenTopoMap, OSM",z:17},
  esri:{t:()=>["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],a:"© Esri",z:19},
+ esrit:{t:()=>["https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"],a:"© Esri",z:19},
+ esrir:{t:()=>["https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"],a:"© Esri",z:19},
+ carto:{t:()=>["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],a:"© OpenStreetMap © CARTO",z:19},
  ignp:{t:ign("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png"),a:"© IGN",z:18},
  igns:{t:ign("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg"),a:"© IGN",z:19},
  mbs:{t:mb("satellite-streets-v12"),a:"© Mapbox © OSM",z:22},
@@ -263,7 +266,7 @@ async function setBase(id){
   if(map.getSource("base"))map.removeSource("base");
   map.addSource("base",{type:"raster",tiles,tileSize:256,maxzoom:b.z,attribution:b.a});
   map.addLayer({id:"base",type:"raster",source:"base"},map.getLayer("res")?"res":"grid-l");
-  curBase=id;
+  curBase=id;berr[id]=0;
  }catch(e){
   $("#base").value=curBase; st("⚠️ "+(e.message||e));
   if(/Token|Clé|Google/.test(String(e.message||e)))openCfg();
@@ -276,6 +279,12 @@ map.on("load",()=>{
  setBase("osm");
 });
 $("#base").onchange=e=>setBase(e.target.value);
+const berr={};
+map.on("error",e=>{
+ if(e.sourceId!=="base")return;
+ const n=berr[curBase]=(berr[curBase]||0)+1,code=e.error&&e.error.status;
+ if(n==3)st(`⚠️ Le fond « ${$("#base").selectedOptions[0].text} » ne s'affiche pas${code?` (erreur HTTP ${code})`:" (serveur injoignable ou bloqué)"}. Essayez un autre fond${/^(mb|g)/.test(curBase)?" ou vérifiez votre clé (⚙ Clés)":""}.`);
+});
 
 // ---------- Clés ----------
 fetch("/api/settings").then(r=>r.json()).then(s=>{cfg={mapbox:s.mapbox||"",google:s.google||"",s3:s.s3||{}};loadS3()});
