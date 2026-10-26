@@ -22,16 +22,25 @@ def write_geotiff(path, arr, x0, y0, res, crs):
 def write_wld(path, x0, y0, res):
     Path(path).write_text(f"{res}\n0\n0\n{-res}\n{x0 + res / 2}\n{y0 - res / 2}\n")
 
-def write_geojson(path, name, ring, gcps, method):
-    xs, ys = [p[0] for p in ring], [p[1] for p in ring]
-    fp = {"type": "FeatureCollection", "name": name + "_footprint", "bbox": [min(xs), min(ys), max(xs), max(ys)],
-          "features": [{"type": "Feature", "properties": {"name": name, "method": method},
-                        "geometry": {"type": "Polygon", "coordinates": [ring]}}]}
-    Path(path).write_text(json.dumps(fp))
+def frame_geojson(name, ring, method, zmin=None, zmax=None):
+    xs, ys = [q[0] for q in ring], [q[1] for q in ring]
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    props = {"name": name, "method": method, "zmin": zmin, "zmax": zmax}
+    return {"type": "FeatureCollection", "name": name + "_footprint", "bbox": [x0, y0, x1, y1], "features": [
+        {"type": "Feature", "properties": {**props, "kind": "footprint"}, "geometry": {"type": "Polygon", "coordinates": [ring]}},
+        {"type": "Feature", "properties": {**props, "kind": "bbox"},
+         "geometry": {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}}]}
+
+def write_geojson(path, name, ring, gcps, method, zmin=None, zmax=None):
+    Path(path).write_text(json.dumps(frame_geojson(name, ring, method, zmin, zmax)))
     pts = {"type": "FeatureCollection", "features": [
         {"type": "Feature", "properties": {"n": i + 1, "px": g["px"], "py": g["py"]},
          "geometry": {"type": "Point", "coordinates": [g["lon"], g["lat"]]}} for i, g in enumerate(gcps)]}
     Path(str(path).replace("_footprint.geojson", "_gcps.geojson")).write_text(json.dumps(pts))
+
+def write_frame(out_dir, name, ring, gcps, method, zmin, zmax):
+    out_dir = Path(out_dir); out_dir.mkdir(exist_ok=True)
+    write_geojson(out_dir / f"{name}_footprint.geojson", name, ring, gcps, method, zmin, zmax)
 
 def write_shp(base, name, ring):
     import shapefile
@@ -78,7 +87,7 @@ def export_all(d, name, src, gcps, method, kinds, crs, max_px, meta):
     w, h = Image.open(src).size
     ring = georef.footprint(w, h, gcps, method)
     if "geojson" in kinds:
-        write_geojson(out / f"{name}_footprint.geojson", name, ring, gcps, method)
+        write_geojson(out / f"{name}_footprint.geojson", name, ring, gcps, method, meta.get("zmin"), meta.get("zmax"))
         files += [f"{name}_footprint.geojson", f"{name}_gcps.geojson"]
     if "shp" in kinds:
         write_shp(out / f"{name}_footprint", name, ring); files.append(f"{name}_footprint.shp (+ .shx .dbf .prj)")
