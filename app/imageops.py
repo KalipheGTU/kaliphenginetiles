@@ -10,7 +10,7 @@ def load(d):
     return Image.open(src_path(d))
 
 def save_cur(d, im):
-    for f in ("source.png", "source.jpg"): (d / f).unlink(missing_ok=True)
+    for f in ("source.png", "source.jpg", "prev_small.png", "preview.png"): (d / f).unlink(missing_ok=True)
     if im.mode == "RGBA": im.save(d / "source.png")
     else: im.convert("RGB").save(d / "source.jpg", quality=95)
 
@@ -38,3 +38,20 @@ def remove_colors(im, colors, tol):
     for c in colors: m |= np.abs(rgb - np.array(c[:3])).max(axis=2) <= tol
     a[m, 3] = 0
     return Image.fromarray(a, "RGBA")
+
+def reset(d):
+    for f in ("source.png", "source.jpg", "prev_small.png", "preview.png"): (d / f).unlink(missing_ok=True)
+    o = d / "orig.jpg" if (d / "orig.jpg").exists() else d / "orig.png"
+    import shutil; shutil.copy(o, d / ("source.jpg" if o.suffix == ".jpg" else "source.png"))
+
+def prev_small(d, side=2048):
+    """Copie réduite de l'image courante, pour un aperçu rapide. Retourne (chemin, facteur d'échelle)."""
+    src = src_path(d); p = d / "prev_small.png"
+    w, h = Image.open(src).size
+    if not p.exists():
+        im = Image.open(src); f = min(1.0, side / max(w, h))
+        if f < 1: im.draft("RGB", (round(w * f), round(h * f)))
+        im = im.convert("RGBA" if im.mode == "RGBA" else "RGB")
+        if f < 1: im = im.resize((round(w * f), round(h * f)), Image.LANCZOS)
+        im.save(p)
+    return p, Image.open(p).size[0] / w
