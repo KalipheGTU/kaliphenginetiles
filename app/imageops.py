@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 def src_path(d):
     p = d / "source.png"
@@ -55,3 +55,23 @@ def prev_small(d, side=2048):
         if f < 1: im = im.resize((round(w * f), round(h * f)), Image.LANCZOS)
         im.save(p)
     return p, Image.open(p).size[0] / w
+
+
+def harmonize(im):
+    """Correction douce et automatique du contraste/couleur, en préservant l'alpha."""
+    rgba = im.convert("RGBA")
+    a = np.asarray(rgba).copy()
+    rgb = a[..., :3]
+    # Ignore les pixels transparents pour calculer les percentiles.
+    valid = a[..., 3] > 0
+    if not valid.any():
+        return rgba
+    out = rgb.copy()
+    for c in range(3):
+        vals = rgb[..., c][valid]
+        lo, hi = np.percentile(vals, (1.0, 99.0))
+        if hi > lo:
+            scaled = (rgb[..., c].astype(np.float32) - lo) * (255.0 / (hi - lo))
+            out[..., c] = np.clip(scaled, 0, 255).astype(np.uint8)
+    a[..., :3] = out
+    return Image.fromarray(a, "RGBA")
