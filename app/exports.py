@@ -22,33 +22,37 @@ def write_geotiff(path, arr, x0, y0, res, crs):
 def write_wld(path, x0, y0, res):
     Path(path).write_text(f"{res}\n0\n0\n{-res}\n{x0 + res / 2}\n{y0 - res / 2}\n")
 
-def frame_geojson(name, ring, method, zmin=None, zmax=None):
-    xs, ys = [q[0] for q in ring], [q[1] for q in ring]
+def frame_geojson(name, items, zmin=None, zmax=None):
+    """items = [(nom_calque, anneau lon/lat)] : un contour par image + le rectangle englobant de l'ensemble."""
+    xs = [q[0] for _, ring in items for q in ring]; ys = [q[1] for _, ring in items for q in ring]
     x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
-    props = {"name": name, "method": method, "zmin": zmin, "zmax": zmax}
-    return {"type": "FeatureCollection", "name": name + "_footprint", "bbox": [x0, y0, x1, y1], "features": [
-        {"type": "Feature", "properties": {**props, "kind": "footprint"}, "geometry": {"type": "Polygon", "coordinates": [ring]}},
-        {"type": "Feature", "properties": {**props, "kind": "bbox"},
-         "geometry": {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}}]}
+    feats = [{"type": "Feature", "properties": {"name": n, "project": name, "kind": "footprint", "zmin": zmin, "zmax": zmax},
+              "geometry": {"type": "Polygon", "coordinates": [ring]}} for n, ring in items]
+    feats.append({"type": "Feature", "properties": {"name": name, "project": name, "kind": "bbox", "zmin": zmin, "zmax": zmax},
+                  "geometry": {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}})
+    return {"type": "FeatureCollection", "name": name + "_footprint", "bbox": [x0, y0, x1, y1], "features": feats}
 
-def write_geojson(path, name, ring, gcps, method, zmin=None, zmax=None):
-    Path(path).write_text(json.dumps(frame_geojson(name, ring, method, zmin, zmax)))
+def write_geojson(path, name, layers, zmin=None, zmax=None):
+    items = [(l.name or name, georef.footprint(l.w, l.h, l.gcps, l.method)) for l in layers]
+    Path(path).write_text(json.dumps(frame_geojson(name, items, zmin, zmax)))
     pts = {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "properties": {"n": i + 1, "px": g["px"], "py": g["py"]},
-         "geometry": {"type": "Point", "coordinates": [g["lon"], g["lat"]]}} for i, g in enumerate(gcps)]}
+        {"type": "Feature", "properties": {"layer": l.name, "n": i + 1, "px": g["px"], "py": g["py"]},
+         "geometry": {"type": "Point", "coordinates": [g["lon"], g["lat"]]}}
+        for l in layers for i, g in enumerate(l.gcps)]}
     Path(str(path).replace("_footprint.geojson", "_gcps.geojson")).write_text(json.dumps(pts))
 
-def write_frame(out_dir, name, ring, gcps, method, zmin, zmax):
+def write_frame(out_dir, name, layers, zmin, zmax):
     out_dir = Path(out_dir); out_dir.mkdir(exist_ok=True)
-    write_geojson(out_dir / f"{name}_footprint.geojson", name, ring, gcps, method, zmin, zmax)
+    write_geojson(out_dir / f"{name}_footprint.geojson", name, layers, zmin, zmax)
 
-def write_shp(base, name, ring):
+def write_shp(base, name, layers):
     import shapefile
-    area = sum(ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1] for i in range(len(ring) - 1))
-    if area > 0: ring = ring[::-1]            # anneau extérieur horaire
-    w = shapefile.Writer(str(base), shapeType=shapefile.POLYGON)
-    w.field("name", "C", 80); w.poly([ring]); w.record(name); w.close()
-    Path(str(base) + ".prj").write_text(WKT4326)
+    w = shapefile.Writer(str(base), shapeType=shapefile.POLYGON); w.field("name", "C", 80)
+    for l in layers:
+        ring = georef.footprint(l.w, l.h, l.gcps, l.method)
+        if sum(ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1] for i in range(len(ring) - 1)) > 0: ring = ring[::-1]
+        w.poly([ring]); w.record(l.name or name)
+    w.close(); Path(str(base) + ".prj").write_text(WKT4326)
 
 def write_kmz(path, name, arr, x0, y0, res):
     H, W = arr.shape[:2]
@@ -59,7 +63,7 @@ def write_kmz(path, name, arr, x0, y0, res):
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("doc.kml", kml); z.writestr("overlay.png", buf.getvalue())
 
-def write_gpkg(path, tiles_dir, name, bounds_m, zmin, zmax):
+def write_gpkg(path, tiles_dir, name, bounds_m, zmin, zmax, ts=256):
     if os.path.exists(path): os.remove(path)
     O = georef.ORIGIN; db = sqlite3.connect(path)
     db.execute("PRAGMA application_id=1196444487"); db.execute("PRAGMA user_version=10300")
@@ -73,7 +77,7 @@ def write_gpkg(path, tiles_dir, name, bounds_m, zmin, zmax):
     db.execute("INSERT INTO gpkg_tile_matrix_set VALUES ('tiles',3857,?,?,?,?)", (-O, -O, O, O))
     db.execute("CREATE TABLE gpkg_tile_matrix(table_name TEXT NOT NULL, zoom_level INTEGER NOT NULL, matrix_width INTEGER NOT NULL, matrix_height INTEGER NOT NULL, tile_width INTEGER NOT NULL, tile_height INTEGER NOT NULL, pixel_x_size DOUBLE NOT NULL, pixel_y_size DOUBLE NOT NULL, PRIMARY KEY (table_name, zoom_level))")
     for z in range(zmin, zmax + 1):
-        db.execute("INSERT INTO gpkg_tile_matrix VALUES ('tiles',?,?,?,256,256,?,?)", (z, 2 ** z, 2 ** z, 2 * O / 256 / 2 ** z, 2 * O / 256 / 2 ** z))
+        db.execute("INSERT INTO gpkg_tile_matrix VALUES ('tiles',?,?,?,?,?,?,?)", (z, 2 ** z, 2 ** z, ts, ts, 2 * O / ts / 2 ** z, 2 * O / ts / 2 ** z))
     db.execute("CREATE TABLE tiles(id INTEGER PRIMARY KEY AUTOINCREMENT, zoom_level INTEGER NOT NULL, tile_column INTEGER NOT NULL, tile_row INTEGER NOT NULL, tile_data BLOB NOT NULL, UNIQUE(zoom_level,tile_column,tile_row))")
     for z in os.listdir(tiles_dir):
         for x in os.listdir(os.path.join(tiles_dir, z)):
@@ -82,18 +86,17 @@ def write_gpkg(path, tiles_dir, name, bounds_m, zmin, zmax):
                     db.execute("INSERT INTO tiles(zoom_level,tile_column,tile_row,tile_data) VALUES (?,?,?,?)", (int(z), int(x), int(f[:-4]), fh.read()))
     db.commit(); db.close()
 
-def export_all(d, name, src, gcps, method, kinds, crs, max_px, meta):
+def export_all(d, name, layers, kinds, crs, max_px, meta):
+    """Exporte le COLLAGE de tous les calques en un seul fichier par format."""
     out = d / "exports"; out.mkdir(exist_ok=True); files = []
-    w, h = Image.open(src).size
-    ring = georef.footprint(w, h, gcps, method)
     if "geojson" in kinds:
-        write_geojson(out / f"{name}_footprint.geojson", name, ring, gcps, method, meta.get("zmin"), meta.get("zmax"))
+        write_geojson(out / f"{name}_footprint.geojson", name, layers, meta.get("zmin"), meta.get("zmax"))
         files += [f"{name}_footprint.geojson", f"{name}_gcps.geojson"]
     if "shp" in kinds:
-        write_shp(out / f"{name}_footprint", name, ring); files.append(f"{name}_footprint.shp (+ .shx .dbf .prj)")
+        write_shp(out / f"{name}_footprint", name, layers); files.append(f"{name}_footprint.shp (+ .shx .dbf .prj)")
     cache = {}
     def ras(c):
-        if c not in cache: cache[c] = georef.render_raster(src, gcps, method, c, max_px)
+        if c not in cache: cache[c] = georef.render_raster(layers, c, max_px)
         return cache[c]
     if "geotiff" in kinds:
         a, x0, y0, r = ras(crs); write_geotiff(out / f"{name}_{crs}.tif", a, x0, y0, r, crs); files.append(f"{name}_{crs}.tif")
@@ -102,7 +105,7 @@ def export_all(d, name, src, gcps, method, kinds, crs, max_px, meta):
             a, x0, y0, r = ras(crs); base = out / f"{name}_wld"
             im = Image.fromarray(a, "RGBA")
             if fmt == "jpg":
-                bg = Image.new("RGB", im.size, "white"); bg.paste(im, mask=im.split()[3]); bg.save(f"{base}.jpg", quality=92)
+                bg = Image.new("RGB", im.size, "white"); bg.paste(im, mask=im.split()[3]); bg.save(f"{base}.jpg", quality=95)
             else: im.save(f"{base}.{ext}")
             write_wld(f"{base}.{wext}", x0, y0, r); Path(f"{base}.prj").write_text(WKT[crs])
             files += [f"{name}_wld.{ext}", f"{name}_wld.{wext}", f"{name}_wld.prj"]
@@ -110,9 +113,8 @@ def export_all(d, name, src, gcps, method, kinds, crs, max_px, meta):
         a, x0, y0, r = ras("4326"); write_kmz(out / f"{name}.kmz", name, a, x0, y0, r); files.append(f"{name}.kmz")
     if "gpkg" in kinds:
         if not (d / "tiles").exists(): raise ValueError("GeoPackage : générez d'abord les tuiles (bouton Géoréférencer)")
-        xs = [georef.ll2m(*p) for p in ring]
-        bm = (min(p[0] for p in xs), min(p[1] for p in xs), max(p[0] for p in xs), max(p[1] for p in xs))
-        write_gpkg(out / f"{name}.gpkg", d / "tiles", name, bm, meta["zmin"], meta["zmax"]); files.append(f"{name}.gpkg")
+        b, _ = georef.union([(l.b, l.mpp) for l in layers])
+        write_gpkg(out / f"{name}.gpkg", d / "tiles", name, b, meta["zmin"], meta["zmax"], meta.get("ts", 256)); files.append(f"{name}.gpkg")
     return files
 
 # ---------- Envoi S3 (AWS S3, Cloudflare R2, Scaleway, MinIO…) : signature SigV4 ----------
