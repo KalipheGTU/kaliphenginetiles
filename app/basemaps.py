@@ -86,4 +86,4 @@ def get_font(stack, rng, cache_dir):
     f = Path(cache_dir) / "fonts" / stack.replace(",", "_") / f"{rng}.pbf"
     if f.exists(): return f.read_bytes()
     _, _, body = fetch_url(f"https://demotiles.maplibre.org/font/{urllib.request.quote(stack)}/{rng}.pbf")
-    f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(body); return body
+    f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(body); return body 
