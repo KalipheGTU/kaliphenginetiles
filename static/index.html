@@ -1,8 +1,10 @@
 <!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>KalipheTiles</title>
-<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="https://unpkg.com/proj4@2.12.1/dist/proj4.js"></script>
+<link href="/vendor/maplibre-gl.css" rel="stylesheet" onerror="this.onerror=null;this.href='https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css'">
+<script src="/vendor/maplibre-gl.js"></script>
+<script>window.maplibregl||document.write('<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"><\/script>')</script>
+<script src="/vendor/proj4.js"></script>
+<script>window.proj4||document.write('<script src="https://unpkg.com/proj4@2.12.1/dist/proj4.js"><\/script>')</script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font:14px system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
@@ -17,7 +19,7 @@ button,select{padding:6px 10px;border-radius:6px;border:0;cursor:pointer}
 #list div{display:flex;gap:8px;padding:2px 8px}#list span{flex:1}
 .ov{position:absolute;top:8px;left:8px;z-index:5;width:min(430px,calc(100% - 60px));display:flex;flex-direction:column;gap:5px}
 .row{display:flex;gap:4px;align-items:center}
-.ov .row>*{min-width:0}#cgo{white-space:nowrap;flex:none}#gst{flex:0 0 96px!important}
+.ov .row{flex-wrap:wrap}#cgo{white-space:nowrap;flex:none}#gst{flex:0 0 96px!important}.ov select{flex:1 1 140px;min-width:0}
 .ov input[type=text]{flex:1;min-width:0;padding:6px 8px;border:1px solid #bbb;border-radius:6px}
 .ov label{background:#fff;padding:4px 6px;border-radius:6px;font-size:12px;white-space:nowrap}
 #gstep:empty{display:none}
@@ -68,7 +70,7 @@ dialog input{width:100%;padding:6px;margin:4px 0 12px}dialog small{color:#555}
   <optgroup label="Mapbox (token)"><option value="mbs">Mapbox Satellite</option><option value="mbr">Mapbox Rues</option><option value="mbo">Mapbox Outdoors</option></optgroup>
   <optgroup label="Google (clé API)"><option value="gr">Google Plan</option><option value="gs">Google Satellite</option></optgroup>
  </select>
- <button id="cfg" title="Tokens et clés API">⚙ Clés</button>
+ <button id="cfg" title="Tokens et clés API">⚙ Clés</button><button id="b-diag">🔧 Diagnostic</button>
  <button id="undo" title="Ctrl+Z">↶ Annuler</button><button id="redo" title="Ctrl+Y">↷ Rétablir</button>
  <button id="go" disabled>Géoréférencer</button>
 </header>
@@ -147,6 +149,7 @@ dialog input{width:100%;padding:6px;margin:4px 0 12px}dialog small{color:#555}
   </div></div>
 </div>
 <div id="status">1) Chargez une image · 2) placez un point sur l'image, puis sa position sur la carte (clic ou coordonnées)</div>
+<dialog id="dg"><h3 style="margin-top:0">Diagnostic</h3><pre id="dgt" style="white-space:pre-wrap;font-size:12px"></pre><div class="row" style="justify-content:flex-end"><button id="dgc">Fermer</button></div></dialog>
 <dialog id="dlg">
  <h3 style="margin-top:0">Clés et tokens</h3>
  Token Mapbox <input id="k-mb" placeholder="pk.…">
@@ -156,6 +159,7 @@ dialog input{width:100%;padding:6px;margin:4px 0 12px}dialog small{color:#555}
 </dialog>
 <script>
 const $=s=>document.querySelector(s), st=t=>$("#status").innerHTML=t;
+if(typeof maplibregl==="undefined"||typeof proj4==="undefined"){document.body.insertAdjacentHTML("afterbegin","<div style='padding:20px;background:#fee;font:15px sans-serif'>⚠️ Bibliothèque de carte introuvable (dossier <b>static/vendor</b> absent et internet indisponible). Voir README.</div>");throw new Error("bibliothèques manquantes")}
 
 /*COORDS*/
 const L93="+proj=lcc +lat_0=46.5 +lon_0=3 +lat_1=49 +lat_2=44 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs";
@@ -234,45 +238,23 @@ function parseCoords(t,fmt,lonFirst){
 /*ENDCOORDS*/
 
 // ---------- Fonds de carte ----------
-let cfg={mapbox:"",google:""}, curBase="osm";
-const mb=s=>()=>{if(!cfg.mapbox)throw "Token Mapbox manquant (bouton ⚙ Clés)";return[`https://api.mapbox.com/styles/v1/mapbox/${s}/tiles/256/{z}/{x}/{y}@2x?access_token=${cfg.mapbox}`]};
-const gg=t=>async()=>{
- if(!cfg.google)throw "Clé Google manquante (bouton ⚙ Clés)";
- const r=await fetch("https://tile.googleapis.com/v1/createSession?key="+cfg.google,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mapType:t,language:"fr-FR",region:"FR"})});
- const j=await r.json(); if(!j.session)throw "Google : "+(j.error&&j.error.message||"échec");
- return[`https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session=${j.session}&key=${cfg.google}`];
-};
-const ign=(l,f)=>()=>[`https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${l}&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=${f}`];
-const BASES={
- osm:{t:()=>["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],a:"© OpenStreetMap",z:19},
- topo:{t:()=>["https://tile.opentopomap.org/{z}/{x}/{y}.png"],a:"© OpenTopoMap, OSM",z:17},
- esri:{t:()=>["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],a:"© Esri",z:19},
- esrit:{t:()=>["https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"],a:"© Esri",z:19},
- esrir:{t:()=>["https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"],a:"© Esri",z:19},
- carto:{t:()=>["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],a:"© OpenStreetMap © CARTO",z:19},
- ignp:{t:ign("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png"),a:"© IGN",z:18},
- igns:{t:ign("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg"),a:"© IGN",z:19},
- mbs:{t:mb("satellite-streets-v12"),a:"© Mapbox © OSM",z:22},
- mbr:{t:mb("streets-v12"),a:"© Mapbox © OSM",z:22},
- mbo:{t:mb("outdoors-v12"),a:"© Mapbox © OSM",z:22},
- gr:{t:gg("roadmap"),a:"© Google",z:22},
- gs:{t:gg("satellite"),a:"© Google",z:22}
-};
-const map=new maplibregl.Map({container:"map",center:[2.5,46.6],zoom:4.5,style:{version:8,glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",sources:{},layers:[]}});
+let cfg={mapbox:"",google:"",s3:{}}, curBase="osm", keyVer=0;
+const BASES={osm:{z:19,a:"© OpenStreetMap"},topo:{z:17,a:"© OpenTopoMap, OSM"},esri:{z:19,a:"© Esri"},esrit:{z:19,a:"© Esri"},esrir:{z:19,a:"© Esri"},
+ carto:{z:19,a:"© OpenStreetMap © CARTO"},ignp:{z:18,a:"© IGN"},igns:{z:19,a:"© IGN"},
+ mbs:{z:22,a:"© Mapbox © OSM",k:"mapbox"},mbr:{z:22,a:"© Mapbox © OSM",k:"mapbox"},mbo:{z:22,a:"© Mapbox © OSM",k:"mapbox"},
+ gr:{z:22,a:"© Google",k:"google"},gs:{z:22,a:"© Google",k:"google"}};
+const tileUrl=id=>`${location.origin}/tiles/${id}/{z}/{x}/{y}?v=${keyVer}`;
+const map=new maplibregl.Map({container:"map",center:[2.5,46.6],zoom:4.5,style:{version:8,glyphs:location.origin+"/fonts/{fontstack}/{range}.pbf",sources:{},layers:[]}});
 map.addControl(new maplibregl.NavigationControl({visualizePitch:false}),"bottom-right");
 map.addControl(new maplibregl.ScaleControl(),"bottom-left");
 async function setBase(id){
- try{
-  const b=BASES[id],tiles=await b.t();
-  if(map.getLayer("base"))map.removeLayer("base");
-  if(map.getSource("base"))map.removeSource("base");
-  map.addSource("base",{type:"raster",tiles,tileSize:256,maxzoom:b.z,attribution:b.a});
-  map.addLayer({id:"base",type:"raster",source:"base"},map.getLayer("res")?"res":"grid-l");
-  curBase=id;berr[id]=0;
- }catch(e){
-  $("#base").value=curBase; st("⚠️ "+(e.message||e));
-  if(/Token|Clé|Google/.test(String(e.message||e)))openCfg();
- }
+ const b=BASES[id];
+ if(b.k&&!cfg[b.k]){$("#base").value=curBase;st("⚠️ "+(b.k=="mapbox"?"Token Mapbox":"Clé Google")+" manquant(e) — bouton ⚙ Clés");openCfg();return}
+ if(map.getLayer("base"))map.removeLayer("base");
+ if(map.getSource("base"))map.removeSource("base");
+ map.addSource("base",{type:"raster",tiles:[tileUrl(id)],tileSize:256,maxzoom:b.z,attribution:b.a});
+ map.addLayer({id:"base",type:"raster",source:"base"},map.getLayer("res")?"res":"grid-l");
+ curBase=id;berr[id]=0;
 }
 map.on("load",()=>{
  map.addSource("grid",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
@@ -282,17 +264,20 @@ map.on("load",()=>{
 });
 $("#base").onchange=e=>setBase(e.target.value);
 const berr={};
-map.on("error",e=>{
+map.on("error",async e=>{
  if(e.sourceId!=="base")return;
- const n=berr[curBase]=(berr[curBase]||0)+1,code=e.error&&e.error.status;
- if(n==3)st(`⚠️ Le fond « ${$("#base").selectedOptions[0].text} » ne s'affiche pas${code?` (erreur HTTP ${code})`:" (serveur injoignable ou bloqué)"}. Essayez un autre fond${/^(mb|g)/.test(curBase)?" ou vérifiez votre clé (⚙ Clés)":""}.`);
+ const n=berr[curBase]=(berr[curBase]||0)+1;
+ if(n==3){
+  let d="";try{const r=await fetch(`/tiles/${curBase}/0/0/0`);if(!r.ok){const j=await r.json();d=" : "+j.detail}}catch(x){d=" : "+x}
+  st(`⚠️ Le fond « ${$("#base").selectedOptions[0].text} » ne s'affiche pas${d}. Cliquez sur 🔧 Diagnostic.`);
+ }
 });
 
 // ---------- Clés ----------
 fetch("/api/settings").then(r=>r.json()).then(s=>{cfg={mapbox:s.mapbox||"",google:s.google||"",s3:s.s3||{}};loadS3()});
 function openCfg(){$("#k-mb").value=cfg.mapbox;$("#k-g").value=cfg.google;$("#dlg").showModal()}
 $("#cfg").onclick=openCfg; $("#k-cancel").onclick=()=>$("#dlg").close();
-$("#k-save").onclick=async()=>{
+$("#k-save").onclick=async()=>{keyVer++;
  cfg={...cfg,mapbox:$("#k-mb").value.trim(),google:$("#k-g").value.trim()};
  await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
  $("#dlg").close(); st("Clés enregistrées"); setBase($("#base").value);
@@ -505,11 +490,28 @@ function showResult(m){
  map.addSource("res",{type:"raster",tileSize:256,bounds:m.bounds,tiles:[location.origin+"/data/"+id+"/tiles/{z}/{x}/{y}.png"]});
  map.addLayer({id:"res",type:"raster",source:"res"},"grid-l");
  map.fitBounds([[m.bounds[0],m.bounds[1]],[m.bounds[2],m.bounds[3]]],{padding:40});
+ if(m.frame)fetch(m.frame+"?t="+Date.now()).then(r=>r.json()).then(g=>{
+  if(map.getLayer("frame-l")){map.removeLayer("frame-l");map.removeSource("frame")}
+  map.addSource("frame",{type:"geojson",data:g});
+  map.addLayer({id:"frame-l",type:"line",source:"frame",paint:{"line-color":["match",["get","kind"],"bbox","#2a9d8f","#ff6d00"],"line-width":3,"line-dasharray":[2,1]}},"grid-l");
+ });
  const e=m.errors||[],rm=Math.sqrt(e.reduce((a,b)=>a+b*b,0)/e.length).toFixed(1);
- st(`✅ Terminé · erreur moyenne ${rm} px (max ${Math.max(...e).toFixed(1)}) · opacité <input id="op" type="range" min="0" max="1" step=".05" value="1"> · <a href="#" id="of">Ouvrir le dossier (MBTiles + tuiles)</a>`);
+ st(`✅ Terminé · erreur moyenne ${rm} px (max ${Math.max(...e).toFixed(1)}) · opacité <input id="op" type="range" min="0" max="1" step=".05" value="1"> · <a href="#" id="of">Ouvrir le dossier</a><br>🟧 Cadre GeoJSON : <b>exports\\${m.name}_footprint.geojson</b> (contour exact + rectangle englobant, prêt pour QGIS)`);
  $("#op").oninput=ev=>map.setPaintProperty("res","raster-opacity",+ev.target.value);
  $("#of").onclick=ev=>{ev.preventDefault();fetch(`/api/maps/${id}/open`,{method:"POST"})};
 }
+
+// ---------- Diagnostic ----------
+$("#b-diag").onclick=async()=>{
+ const L=["MapLibre : "+(typeof maplibregl!=="undefined"?"chargé":"ABSENT"),"WebGL : "+(document.createElement("canvas").getContext("webgl")?"oui":"NON"),
+  `Zone carte : ${$("#map").clientWidth}×${$("#map").clientHeight} px`,`Fond actuel : ${curBase}`];
+ $("#dgt").textContent=L.join("\n")+"\n\nTest réseau depuis l'application…";$("#dg").showModal();
+ try{const j=await (await fetch("/api/diag")).json();
+  L.push("Dossier de travail : "+j.data_dir,"");j.tests.forEach(t=>L.push((t.ok?"✅ ":"❌ ")+t.prov.padEnd(6)+(t.ok?t.ms+" ms":t.error)));
+ }catch(e){L.push("Diagnostic impossible : "+e)}
+ $("#dgt").textContent=L.join("\n");
+};
+$("#dgc").onclick=()=>$("#dg").close();
 
 // ---------- Fenêtres flottantes + onglets ----------
 let Zi=10;
@@ -531,6 +533,8 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
 // ---------- Image : rogner, pivoter, couleurs ----------
 function showImage(j,keep){
  id=j.id||id;nat={w:j.width,h:j.height};
+ for(const l of["res","frame-l"])if(map.getLayer(l))map.removeLayer(l);
+ for(const x of["res","frame"])if(map.getSource(x))map.removeSource(x);
  ib.innerHTML=`<img src="${j.image}?t=${Date.now()}" width="${j.width}" height="${j.height}"><div id="cr"></div>`;
  if(!keep)fit();
 }
