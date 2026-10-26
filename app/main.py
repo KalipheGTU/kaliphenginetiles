@@ -42,7 +42,7 @@ class ProcessReq(BaseModel):
 class PreviewReq(BaseModel):
     gcps: List[GCP]; method: Method = "affine"
 class EditReq(BaseModel):
-    op: Literal["crop", "rotate", "remove", "reset"]
+    op: Literal["crop", "rotate", "remove", "reset", "harmonize"]
     box: Optional[List[float]] = None
     angle: float = 0
     colors: List[List[int]] = []
@@ -54,6 +54,10 @@ class ExportReq(BaseModel):
     max_px: int = 0
 class UploadReq(BaseModel):
     s3: dict; what: List[str] = ["tiles", "mbtiles", "exports"]
+class OpenTopoReq(BaseModel):
+    api_key: str
+    west: float; south: float; east: float; north: float
+    demtype: Literal["SRTMGL1", "SRTMGL3", "COP30", "COP90", "NASADEM", "AW3D30"] = "SRTMGL1"
 class SaveReq(BaseModel):
     layers: List[LayerReq]; zmin: int = 0; zmax: int = 18; crs: str = "3857"; hd: bool = False
 
@@ -89,6 +93,33 @@ def build_layers(reqs):
         except Exception as e: raise HTTPException(400, f"« {l.name or l.id} » : calcul impossible ({e})")
     return out
 
+@app.post("/api/opentopography")
+def opentopography(req: OpenTopoReq):
+    """Télécharge un MNT GeoTIFF depuis l'API Global DEM d'OpenTopography."""
+    import urllib.parse, urllib.request
+    if not req.api_key.strip():
+        raise HTTPException(400, "Clé API OpenTopography requise")
+    if not (-180 <= req.west < req.east <= 180 and -90 <= req.south < req.north <= 90):
+        raise HTTPException(400, "Emprise invalide : Ouest < Est et Sud < Nord sont requis")
+    params = urllib.parse.urlencode({
+        "demtype": req.demtype, "south": req.south, "north": req.north,
+        "west": req.west, "east": req.east, "outputFormat": "GTiff",
+        "API_Key": req.api_key.strip()
+    })
+    url = "https://api.opentopography.org/API/globaldem?" + params
+    request = urllib.request.Request(url, headers={"User-Agent": "KalipheTiles/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            data = response.read()
+            if response.status != 200 or len(data) < 8:
+                raise ValueError("réponse vide ou invalide")
+            if data[:4] not in (b"II*\x00", b"MM\x00*"):
+                raise ValueError(data[:1200].decode("utf-8", errors="replace"))
+            return Response(content=data, media_type="image/tiff",
+                            headers={"Content-Disposition": 'attachment; filename="opentopography_dem.tif"'})
+    except Exception as e:
+        raise HTTPException(502, f"OpenTopography : {e}")
+
 @app.post("/api/maps")
 async def upload(file: UploadFile = File(...)):
     mid = new_id(); d = DATA / mid; d.mkdir()
@@ -116,6 +147,8 @@ def edit(mid: str, req: EditReq):
         else:
             if req.op == "crop": im, g = imageops.crop(imageops.load(d), req.box or [0, 0, 0, 0], g)
             elif req.op == "rotate": im, g = imageops.rotate(imageops.load(d), req.angle, g)
+            elif req.op == "harmonize":
+                im = imageops.harmonize(imageops.load(d))
             else:
                 if not req.colors: raise ValueError("aucune couleur choisie")
                 im = imageops.remove_colors(imageops.load(d), req.colors, req.tol)
