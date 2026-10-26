@@ -600,8 +600,30 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
 
 // ---------- Image : rogner, pivoter, couleurs ----------
 function showImage(j,keep){
- id=j.id||id;nat={w:j.width,h:j.height};
- ib.innerHTML=`<img src="${j.image}?t=${Date.now()}" width="${j.width}" height="${j.height}"><div id="cr"></div>`;
+ id=j.id||id;
+ nat={w:Number(j.width)||0,h:Number(j.height)||0};
+ // Construire l'image en DOM évite les problèmes d'URL et attend son chargement réel.
+ ib.replaceChildren();
+ const im=document.createElement("img");
+ const url=String(j.image||"");
+ im.alt="Image à géoréférencer";
+ im.decoding="async";
+ im.draggable=false;
+ im.width=nat.w; im.height=nat.h;
+ im.style.width=nat.w+"px"; im.style.height=nat.h+"px";
+ im.onload=()=>{
+  // Recalculer après chargement : la fenêtre peut avoir été redimensionnée
+  // pendant la requête ou être encore en cours d'affichage.
+  if(!keep||fitPending||!isFinite(k)||k<=0)fit();
+  st(`Image chargée : ${nat.w} × ${nat.h} pixels`);
+ };
+ im.onerror=()=>{
+  st("⚠️ L’image ne peut pas être affichée. Vérifiez que le serveur est lancé et que le fichier source existe, puis rechargez l’image.");
+  console.error("Échec de chargement de l’image géoréférencée :",url);
+ };
+ im.src=url+(url.includes("?")?"&":"?")+"t="+Date.now();
+ ib.append(im);
+ const cr=document.createElement("div");cr.id="cr";ib.append(cr);
  if(!keep)fit();
 }
 function setTool(t){
