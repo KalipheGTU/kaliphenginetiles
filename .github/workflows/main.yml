@@ -6,8 +6,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Bibliotheques de carte en local
+        shell: bash
+        run: |
+          npm install maplibre-gl@4.7.1 proj4@2.12.1
+          mkdir -p static/vendor
+          cp node_modules/maplibre-gl/dist/maplibre-gl.js node_modules/maplibre-gl/dist/maplibre-gl.css node_modules/proj4/dist/proj4.js static/vendor/
       - run: pip install -r requirements.txt pyinstaller
       - run: pyinstaller --onefile --windowed --name KalipheTiles --hidden-import shapefile --add-data "static;static" launcher.py
       - uses: actions/upload-artifact@v4
-        with: { name: KalipheTiles-windows, path: dist/KalipheTiles.exe }
+        with:
+          name: KalipheTiles-windows
+          path: dist/KalipheTiles.exe
