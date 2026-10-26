@@ -17,6 +17,7 @@ button,select{padding:6px 10px;border-radius:6px;border:0;cursor:pointer}
 #list div{display:flex;gap:8px;padding:2px 8px}#list span{flex:1}
 .ov{position:absolute;top:8px;left:8px;z-index:5;width:min(430px,calc(100% - 60px));display:flex;flex-direction:column;gap:5px}
 .row{display:flex;gap:4px;align-items:center}
+.ov .row>*{min-width:0}#cgo{white-space:nowrap;flex:none}#gst{flex:0 0 96px!important}
 .ov input[type=text]{flex:1;min-width:0;padding:6px 8px;border:1px solid #bbb;border-radius:6px}
 .ov label{background:#fff;padding:4px 6px;border-radius:6px;font-size:12px;white-space:nowrap}
 #gstep:empty{display:none}
@@ -28,6 +29,7 @@ button,select{padding:6px 10px;border-radius:6px;border:0;cursor:pointer}
 .wb{flex:1;min-height:0;position:relative}.wb.col{display:flex;flex-direction:column}
 #iv{position:absolute;inset:0;background:#222;overflow:hidden;cursor:crosshair;touch-action:none}
 #mapwrap{position:absolute;inset:0}
+#map{position:absolute;inset:0}
 #list{font-size:12px}
 .tabs{display:flex;flex-wrap:wrap;gap:2px;background:#eceff1;padding:2px}
 .tabs button{border-radius:4px;padding:4px 8px}.tabs button.on,.tab button.on{background:#fca311}
