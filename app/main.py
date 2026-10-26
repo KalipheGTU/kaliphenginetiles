@@ -2,19 +2,32 @@ import json, os, secrets, shutil, sys, threading, zipfile
 from pathlib import Path
 from typing import List, Literal, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from PIL import Image
-from . import georef, imageops, exports
+from . import georef, imageops, exports, basemaps
 
-DATA = Path.home() / "Documents" / "KalipheTiles"; DATA.mkdir(parents=True, exist_ok=True)
+def documents_dir():
+    if sys.platform == "win32":      # gère le dossier Documents redirigé (OneDrive)
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(260)
+            ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf)
+            if buf.value: return Path(buf.value)
+        except Exception: pass
+    return Path.home() / "Documents"
+
+DATA = documents_dir() / "KalipheTiles"; DATA.mkdir(parents=True, exist_ok=True)
+CACHE = DATA / "_cache"
 SETTINGS = Path.home() / ".kaliphetiles.json"
 BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent))
 STATIC = BASE / "static"
 
 app = FastAPI()
 app.mount("/data", StaticFiles(directory=DATA), name="data")
+if (STATIC / "vendor").exists():
+    app.mount("/vendor", StaticFiles(directory=STATIC / "vendor"), name="vendor")
 
 class GCP(BaseModel):
     px: float; py: float; lon: float; lat: float
@@ -113,7 +126,10 @@ def pipeline(d, req):
         b, zmin, zmax = georef.make_tiles(imageops.src_path(d), g, req.method, d / "tiles",
                                           lambda f: save(d, progress=round(f, 3)), req.zmin, req.zmax)
         georef.to_mbtiles(d / "tiles", d / "carte.mbtiles", b, zmin, zmax, meta(d)["name"])
-        save(d, status="done", bounds=b, zmin=zmin, zmax=zmax)
+        m = meta(d)
+        ring = georef.footprint(m["width"], m["height"], g, req.method)
+        exports.write_frame(d / "exports", m["name"], ring, g, req.method, zmin, zmax)   # cadre GeoJSON automatique
+        save(d, status="done", bounds=b, zmin=zmin, zmax=zmax, frame=f"/data/{d.name}/exports/{m['name']}_footprint.geojson")
     except Exception as e:
         save(d, status="error", error=str(e))
 
@@ -196,6 +212,29 @@ def set_settings(s: dict):
     keep = {"mapbox": str(s.get("mapbox", "")), "google": str(s.get("google", "")),
             "s3": {k: str(v) for k, v in (s.get("s3") or {}).items()}}
     SETTINGS.write_text(json.dumps(keep)); return {"ok": True}
+
+def load_settings():
+    return json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {}
+
+@app.get("/tiles/{prov}/{z}/{x}/{y}")
+def tiles(prov: str, z: int, x: int, y: int):
+    if not (0 <= z <= 24 and 0 <= x < 2 ** z and 0 <= y < 2 ** z): raise HTTPException(404)
+    try:
+        ct, body = basemaps.get_tile(prov, z, x, y, load_settings(), CACHE)
+    except basemaps.TileError as e:
+        return JSONResponse({"detail": e.msg}, status_code=e.status if e.status in (401, 403, 404) else 502)
+    return Response(body, media_type=ct, headers={"Cache-Control": "max-age=86400"})
+
+@app.get("/fonts/{stack}/{rng}.pbf")
+def fonts(stack: str, rng: str):
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9 ,_-]+", stack) or not re.fullmatch(r"\d+-\d+", rng): raise HTTPException(404)
+    try: return Response(basemaps.get_font(stack, rng, CACHE), media_type="application/x-protobuf")
+    except basemaps.TileError: raise HTTPException(404)
+
+@app.get("/api/diag")
+def diag():
+    return {"data_dir": str(DATA), "frozen": bool(getattr(sys, "frozen", False)), "tests": basemaps.diag(load_settings(), CACHE)}
 
 @app.get("/", response_class=HTMLResponse)
 def home(): return (STATIC / "index.html").read_text(encoding="utf-8")
